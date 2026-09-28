@@ -6,12 +6,17 @@
     <Content Include="assets\skill-icon-map.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.158" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <StartupObject>Sora2.Details.Desktop.Program</StartupObject>
   </PropertyGroup>
 
 </Project>

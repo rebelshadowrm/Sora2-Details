@@ -42,6 +42,8 @@ public partial class MainWindow : Window
             SavePlacement();
         };
         Loaded += (_, _) => _placementReady = true;
+        Loaded += async (_, _) => await CheckForUpdatesAsync();
+        Loaded += (_, _) => RefreshCaptureButton();
         LocationChanged += (_, _) => QueuePlacementSave();
         SizeChanged += (_, _) => QueuePlacementSave();
         Closing += (_, _) =>

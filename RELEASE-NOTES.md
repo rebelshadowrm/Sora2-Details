@@ -1,9 +1,13 @@
-# Sora 2 Details 0.1.0 preview
+# Sora 2 Details 0.2.0 preview
 
 This Windows preview provides a compact meter and durable **partial** command-battle combat log. It records observed HP changes and some attributed damaging hits; support actions, misses, some move names, and critical status remain incomplete. It is not yet a complete combat log.
 
-Unzip the release to a writable folder. Start the game, then double-click `Start-Sora2Details.cmd`. The launcher opens the meter and starts a 12-hour read-only capture after one Windows administrator prompt. Start it before entering a command battle. Double-click `Stop-Sora2Details.cmd` to detach the capture cleanly; closing the meter window does not itself detach the probe. With the game closed, the Start command opens saved encounters without capture. `Start-Sora2Details.cmd -MeterOnly` does the same while the game is running.
+Install once from `Sora2.Details-win-x64-preview-Setup.exe`, then open Sora 2 Details from the desktop or Start menu. The installer bundles the .NET app and Python 3.13.15, so no separate runtime install is needed. The portable ZIP remains available.
 
-The meter is a self-contained Windows x64 app. Live capture needs **64-bit Python 3.11 or newer** on `PATH`, or `C:\Python313\python.exe`. The default supported game location is `C:\Games\Trails in the Sky 2nd Chapter`; pass `-GameDirectory` to the PowerShell launcher for another location. Capture refuses an unverified executable hash. Recorded encounters are stored under `%LOCALAPPDATA%\Sora2 Details\encounters`; raw probe traces are under `.research-deps\live` beside this launcher.
+Start the supported game, open the meter, then click **●** to start a 12-hour read-only command-battle capture. Approve the Windows administrator prompt. Click **■** to detach early. Start capture before entering a command battle. The meter displays saved encounters when the game is closed.
+
+The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them.
 
 The meter stays on top of the game. Clicking it gives it keyboard focus; click the game to return control. Its startup no longer activates the window over the game. If game input behaves unexpectedly, use Stop and wait for the probe to detach before continuing.
+
+The installer is unsigned, so Windows may display an unfamiliar-publisher warning. The 0.1.0 ZIP is still available for users who need its earlier launcher behavior.

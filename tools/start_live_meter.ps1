@@ -19,7 +19,10 @@ if ($LASTEXITCODE -ne 0) { throw 'The English status table does not match the va
 if ($LASTEXITCODE -ne 0) { throw 'The English actor-name table does not match the validated lookup payload.' }
 & $PythonPath (Join-Path $PSScriptRoot 'enemy_ai_skill_index.py') $scriptPac mon5031 | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'The English enemy AI script archive does not match the validated build.' }
-$desktopExe = Join-Path $root 'app\Sora2.Details.Desktop.exe'
+$desktopExe = Join-Path $root 'Sora2.Details.Desktop.exe'
+if (-not (Test-Path -LiteralPath $desktopExe)) {
+    $desktopExe = Join-Path $root 'app\Sora2.Details.Desktop.exe'
+}
 if (-not (Test-Path -LiteralPath $desktopExe)) {
     $desktopExe = Join-Path $root 'src\Sora2.Details.Desktop\bin\Release\net9.0-windows\Sora2.Details.Desktop.exe'
 }
@@ -29,7 +32,8 @@ if (-not (Test-Path -LiteralPath $desktopExe)) {
 $games = @(Get-Process -Name sora_2nd -ErrorAction SilentlyContinue)
 if ($games.Count -ne 1) { throw "Expected one running sora_2nd process; found $($games.Count)." }
 
-$liveDir = Join-Path $root '.research-deps\live'
+$dataDir = if ($env:SORA2_DETAILS_DATA_DIR) { $env:SORA2_DETAILS_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'Sora2 Details' }
+$liveDir = Join-Path $dataDir 'live'
 New-Item -ItemType Directory -Path $liveDir -Force | Out-Null
 $currentPath = Join-Path $liveDir 'current.json'
 if (Test-Path -LiteralPath $currentPath) {

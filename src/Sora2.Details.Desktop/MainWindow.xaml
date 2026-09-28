@@ -100,6 +100,8 @@
                     <ColumnDefinition Width="27" />
                     <ColumnDefinition Width="27" />
                     <ColumnDefinition Width="27" />
+                    <ColumnDefinition Width="27" />
+                    <ColumnDefinition Width="27" />
                 </Grid.ColumnDefinitions>
                 <Button x:Name="ModeButton" Grid.Column="0" Style="{StaticResource ChromeButton}"
                         HorizontalContentAlignment="Left" FontWeight="SemiBold" Click="ModeButton_Click"
@@ -110,9 +112,13 @@
                         FontSize="15" ToolTip="Recent encounters and full history" Click="HistoryButton_Click" />
                 <Button Grid.Column="3" Style="{StaticResource ChromeButton}" Content="◷"
                         FontSize="15" ToolTip="Recent timeline" Click="TimelineButton_Click" />
-                <Button Grid.Column="4" Style="{StaticResource ChromeButton}" Content="─"
+                <Button x:Name="CaptureButton" Grid.Column="4" Style="{StaticResource ChromeButton}" Content="●"
+                        ToolTip="Start a partial command-battle capture" Click="CaptureButton_Click" />
+                <Button x:Name="UpdateButton" Grid.Column="5" Style="{StaticResource ChromeButton}" Content="↻"
+                        ToolTip="Check for updates" Click="UpdateButton_Click" />
+                <Button Grid.Column="6" Style="{StaticResource ChromeButton}" Content="─"
                         ToolTip="Minimize" Click="MinimizeButton_Click" />
-                <Button Grid.Column="5" Style="{StaticResource ChromeButton}" Content="×"
+                <Button Grid.Column="7" Style="{StaticResource ChromeButton}" Content="×"
                         FontSize="17" ToolTip="Close" Click="CloseButton_Click" />
             </Grid>
 

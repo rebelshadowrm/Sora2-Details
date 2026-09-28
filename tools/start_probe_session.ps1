@@ -7,7 +7,8 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($Minutes -lt 1 -or $Minutes -gt 1500) { throw 'Minutes must be 1..1500.' }
 $server = Join-Path $PSScriptRoot 'elevated_probe_session.py'
-$sessionDir = Join-Path (Split-Path $PSScriptRoot -Parent) '.research-deps\probe-session'
+$dataDir = if ($env:SORA2_DETAILS_DATA_DIR) { $env:SORA2_DETAILS_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'Sora2 Details' }
+$sessionDir = Join-Path $dataDir 'probe-session'
 $readyPath = Join-Path $sessionDir 'ready.json'
 if (Test-Path -LiteralPath $readyPath) {
     $ready = Get-Content -LiteralPath $readyPath -Raw | ConvertFrom-Json

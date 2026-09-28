@@ -19,9 +19,11 @@ import lifecycle_probe as probe
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SESSION_DIR = ROOT / ".research-deps" / "probe-session"
-OUTPUT_DIR = ROOT / "samples" / "research"
-LIVE_DIR = ROOT / ".research-deps" / "live"
+DATA_DIR = Path(os.environ.get("SORA2_DETAILS_DATA_DIR") or
+                Path(os.environ.get("LOCALAPPDATA", str(ROOT))) / "Sora2 Details")
+DEFAULT_SESSION_DIR = DATA_DIR / "probe-session"
+OUTPUT_DIR = DATA_DIR / "research"
+LIVE_DIR = DATA_DIR / "live"
 EXPECTED_SHA256 = "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"
 
 

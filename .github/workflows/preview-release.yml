@@ -1,0 +1,38 @@
+name: Preview release
+
+on:
+  push:
+    tags:
+      - 'v*-preview.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Restore pinned Velopack CLI
+        run: dotnet tool restore
+      - name: Build and test installer
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          & .\tools\build_installer.ps1 -Version $version
+      - name: Publish GitHub prerelease and update feed
+        shell: pwsh
+        env:
+          VPK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet vpk upload github `
+            --outputDir releases/velopack-preview `
+            --channel win-x64-preview `
+            --repoUrl "https://github.com/$env:GITHUB_REPOSITORY" `
+            --tag $env:GITHUB_REF_NAME `
+            --releaseName "Sora 2 Details $env:GITHUB_REF_NAME" `
+            --targetCommitish $env:GITHUB_SHA `
+            --pre --publish

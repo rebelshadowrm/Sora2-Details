@@ -1,13 +1,17 @@
 param(
     [ValidateRange(2, 12)][int]$Hours = 12,
     [switch]$MeterOnly,
-    [string]$GameDirectory = 'C:\Games\Trails in the Sky 2nd Chapter',
+    [switch]$CaptureOnly,
+    [string]$GameDirectory,
     [string]$PythonPath
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$desktopExe = Join-Path $root 'app\Sora2.Details.Desktop.exe'
+$desktopExe = Join-Path $root 'Sora2.Details.Desktop.exe'
+if (-not (Test-Path -LiteralPath $desktopExe)) {
+    $desktopExe = Join-Path $root 'app\Sora2.Details.Desktop.exe'
+}
 if (-not (Test-Path -LiteralPath $desktopExe)) {
     $desktopExe = Join-Path $root 'src\Sora2.Details.Desktop\bin\Release\net9.0-windows\Sora2.Details.Desktop.exe'
 }
@@ -16,6 +20,7 @@ if (-not (Test-Path -LiteralPath $desktopExe)) {
 }
 
 $game = @(Get-Process -Name sora_2nd -ErrorAction SilentlyContinue)
+if ($CaptureOnly -and $game.Count -eq 0) { throw 'Start the game before beginning live capture.' }
 if ($MeterOnly -or $game.Count -eq 0) {
     if (-not (Get-Process -Name 'Sora2.Details.Desktop' -ErrorAction SilentlyContinue)) {
         Start-Process -FilePath $desktopExe -WorkingDirectory $root | Out-Null
@@ -29,8 +34,15 @@ if ($MeterOnly -or $game.Count -eq 0) {
 }
 if ($game.Count -ne 1) { throw "Expected one sora_2nd process; found $($game.Count)." }
 
+if (-not $GameDirectory) {
+    try { $GameDirectory = Split-Path $game[0].MainModule.FileName -Parent } catch { }
+    if (-not $GameDirectory) {
+        $GameDirectory = 'C:\Games\Trails in the Sky 2nd Chapter'
+    }
+}
+
 if (-not $PythonPath) {
-    $candidates = @('C:\Python313\python.exe') + @(
+    $candidates = @((Join-Path $root 'python\python.exe'), 'C:\Python313\python.exe') + @(
         Get-Command python.exe -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source }
     )
     foreach ($candidate in $candidates | Select-Object -Unique) {
