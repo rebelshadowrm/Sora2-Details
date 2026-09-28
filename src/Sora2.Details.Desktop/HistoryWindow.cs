@@ -7,8 +7,15 @@ namespace Sora2.Details.Desktop;
 
 public sealed class HistoryWindow : Window
 {
+    private sealed record HistoryItem(Encounter Encounter, string Display);
     private readonly ListBox _list;
-    public Encounter? SelectedEncounter => _list.SelectedItem as Encounter;
+    public Encounter? SelectedEncounter => (_list.SelectedItem as HistoryItem)?.Encounter;
+
+    public static string Describe(Encounter encounter)
+    {
+        var quality = encounter.IsComplete ? "" : " · PARTIAL";
+        return $"{encounter.StartedAt.ToLocalTime():g} · {encounter.Outcome}{quality} · {encounter.Label}";
+    }
 
     public HistoryWindow(IReadOnlyList<Encounter> encounters)
     {
@@ -24,12 +31,13 @@ public sealed class HistoryWindow : Window
         panel.Children.Add(open);
         _list = new ListBox
         {
-            DisplayMemberPath = nameof(Encounter.Label),
+            DisplayMemberPath = nameof(HistoryItem.Display),
             Background = new SolidColorBrush(Color.FromRgb(38, 42, 49)),
             Foreground = Brushes.White,
             BorderThickness = new Thickness(0)
         };
-        _list.ItemsSource = encounters.OrderByDescending(encounter => encounter.StartedAt).ToArray();
+        _list.ItemsSource = encounters.OrderByDescending(encounter => encounter.StartedAt)
+            .Select(encounter => new HistoryItem(encounter, Describe(encounter))).ToArray();
         _list.MouseDoubleClick += (_, _) => OpenSelection();
         panel.Children.Add(_list);
         Content = panel;

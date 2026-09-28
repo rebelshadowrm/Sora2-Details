@@ -115,7 +115,7 @@ def lookup_live_move(attack, skill_rows_by_id):
 
 class LiveBridge:
     def __init__(self, store_dir, raw_trace_name, table_rows=None, name_rows=None,
-                 skill_rows=None, enemy_ai_index=None):
+                 skill_rows=None, enemy_ai_index=None, reset_path=None):
         self.store_dir = Path(store_dir)
         self.raw_trace_name = raw_trace_name
         self.encounter_index = 0
@@ -128,6 +128,14 @@ class LiveBridge:
         self.party_lookup = unique_id_lookup(name_rows) if name_rows is not None else {}
         self.skill_lookup = rows_by_packed_id(skill_rows) if skill_rows is not None else {}
         self.enemy_ai_index = enemy_ai_index
+        self.reset_path = Path(reset_path) if reset_path is not None else None
+        self.reset_window_at = None
+        self.reset_actors = set()
+        self.last_reset_at = None
+        self.last_end_at = None
+        self.recent_party_kos = []
+        self.pending_wipe = None
+        self.observed_party_hp = {}
 
     def lookup_enemy_move(self, attack, raw_effect):
         """Use a uniquely matched enemy unit key to select its own AI script."""
@@ -316,13 +324,24 @@ class LiveBridge:
             temporary.unlink(missing_ok=True)
         self.changed += 1
 
-    def start(self, record):
+    def start(self, record, issue=None):
         if self.current is not None:
-            self.issue("Another BattleInit arrived before an end; prior encounter interrupted.")
-            self.current["outcome"] = "Interrupted"
-            self.current["label"] += " · interrupted"
+            if self.pending_wipe is not None:
+                self.issue("A full-party knockout preceded the next battle entry; defeat is inferred.")
+                self.current["outcome"] = "Defeat"
+                self.current["label"] = (
+                    f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · defeat (inferred)")
+            else:
+                self.issue("Another BattleInit arrived before an end; prior encounter interrupted.")
+                self.current["outcome"] = "Interrupted"
+                self.current["label"] += " · interrupted"
             self.save()
         self.pending.clear()
+        self.recent_party_kos.clear()
+        self.pending_wipe = None
+        self.observed_party_hp.clear()
+        self.reset_actors.clear()
+        self.reset_window_at = None
         self.enemy_names.clear()
         self.enemy_lookup.clear()
         stamp = record["at"]
@@ -336,7 +355,8 @@ class LiveBridge:
             "outcome": "InProgress",
             "isComplete": False,
             "actors": [], "events": [],
-            "issues": [PARTIAL_ISSUE, f"Raw trace: {self.raw_trace_name}"],
+            "issues": [PARTIAL_ISSUE, f"Raw trace: {self.raw_trace_name}"] +
+                      ([issue] if issue else []),
         }
         self.save()
 
@@ -352,6 +372,7 @@ class LiveBridge:
             f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · result unknown")
         self.save()
         self.current = None
+        self.last_end_at = datetime.fromisoformat(record["at"])
 
     def interrupt(self, reason):
         if self.current is None:
@@ -363,6 +384,84 @@ class LiveBridge:
         self.save()
         self.current = None
         self.pending.clear()
+
+    def observe_party_hp(self, record):
+        """Recognize a retry after a four-member wipe and direct HP reset.
+
+        Walter's Retry bypassed both lifecycle hooks and restored party status
+        without an HP-setter call. A normal revive passes through the setter
+        with hp_before=0, so it stays inside the existing encounter.
+        """
+        actor_id = record.get("status_actor_id")
+        pointer = record.get("status_ptr")
+        before = record.get("hp_before")
+        maximum = record.get("hp_max")
+        requested = record.get("requested_hp")
+        if not (isinstance(actor_id, int) and actor_id in range(8) and pointer and
+                all(isinstance(value, int) for value in (before, maximum, requested)) and
+                maximum > 0):
+            return False
+        observed_at = datetime.fromisoformat(record["at"])
+        if (self.pending_wipe is not None and
+                (observed_at - self.pending_wipe).total_seconds() >= 2 and
+                self.observed_party_hp.get(pointer) == 0 and before == maximum):
+            self.issue("Full-party knockout followed by a direct HP reset; Retry boundary inferred. Result and exact entry time remain unverified.")
+            self.current["outcome"] = "Defeat"
+            self.current["label"] = (
+                f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · defeat (inferred)")
+            self.save()
+            self.current = None
+            self.start(record, "Retry entry inferred from a full-party knockout and direct HP reset; opening events during the gap may be missing.")
+            return True
+        after = max(0, min(maximum, requested))
+        self.observed_party_hp[pointer] = after
+        if before == 0 and after > 0 and self.pending_wipe is not None:
+            # A watched revive means the command battle continued.
+            self.pending_wipe = None
+            self.recent_party_kos.clear()
+        if before > 0 and after == 0:
+            self.recent_party_kos = [item for item in self.recent_party_kos
+                                     if (observed_at - item[0]).total_seconds() <= 1]
+            self.recent_party_kos.append((observed_at, actor_id))
+            if len({item[1] for item in self.recent_party_kos}) >= 4:
+                self.pending_wipe = observed_at
+        return False
+
+    def observe_outside_battle_hp(self, record):
+        """Mark a broad party-status reset after a fight, without opening an encounter.
+
+        Retry/load can clear party status records without calling BattleInit yet.
+        A single zero HP write can also be ordinary field activity, so require
+        four distinct party IDs in a one-second initialization wave.
+        """
+        if self.encounter_index == 0 or record.get("requested_hp") != 0:
+            return
+        actor_id = record.get("status_actor_id")
+        before = record.get("hp_before")
+        maximum = record.get("hp_max")
+        if not isinstance(actor_id, int) or actor_id not in range(8) or not (
+                isinstance(before, int) and before > 0 and
+                isinstance(maximum, int) and maximum > 0):
+            return
+        observed_at = datetime.fromisoformat(record["at"])
+        if self.last_end_at is None or (observed_at - self.last_end_at).total_seconds() < 2:
+            return
+        if self.reset_window_at is None or (observed_at - self.reset_window_at).total_seconds() > 1:
+            self.reset_window_at = observed_at
+            self.reset_actors.clear()
+        self.reset_actors.add(actor_id)
+        if len(self.reset_actors) < 4 or self.last_reset_at == self.reset_window_at:
+            return
+        self.last_reset_at = self.reset_window_at
+        if self.reset_path is not None:
+            self.reset_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.reset_path.with_name(self.reset_path.name + "." + uuid.uuid4().hex + ".tmp")
+            try:
+                temporary.write_text(json.dumps({"at": record["at"],
+                    "reason": "party_status_reset_outside_battle"}) + "\n", encoding="utf-8")
+                os.replace(temporary, self.reset_path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def add_effect(self, record, kind, source, target, amount, before, after,
                    resolved=None, move=None, move_name=None, raw_result_flags=None,
@@ -483,7 +582,14 @@ class LiveBridge:
                     self.save()
                 self.pending[tid] = record
             elif name == "HpSet":
-                self.hp_write(record)
+                if self.current is None:
+                    self.observe_outside_battle_hp(record)
+                else:
+                    if self.observe_party_hp(record):
+                        # The direct restoration happened outside this hook.
+                        if record.get("hp_before") == record.get("hp_max"):
+                            return
+                    self.hp_write(record)
         elif record.get("kind") == "hit_limit":
             self.issue("Probe hit limit reached; capture may have dropped later results.")
             self.save()
@@ -495,7 +601,8 @@ def consume(trace_path, store_dir, follow=False, max_wait_seconds=3600,
             table_rows=None, name_rows=None, skill_rows=None, enemy_ai_index=None):
     trace_path = Path(trace_path)
     bridge = LiveBridge(store_dir, trace_path.name, table_rows, name_rows,
-                        skill_rows, enemy_ai_index)
+                        skill_rows, enemy_ai_index,
+                        reset_path=trace_path.with_suffix(".reset.json"))
     deadline = time.monotonic() + max_wait_seconds
     while not trace_path.exists():
         if not follow or time.monotonic() >= deadline:

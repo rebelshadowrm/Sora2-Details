@@ -6,9 +6,7 @@ namespace Sora2.Details.Desktop;
 
 internal sealed record WindowPlacement(double Left, double Top, double Width, double Height)
 {
-    private static string SettingsPath(string fileName) => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Sora2 Details", fileName);
+    private static string SettingsPath(string fileName) => Path.Combine(MeterDataDirectory.PathName, fileName);
 
     public static WindowPlacement? Load(string fileName)
     {

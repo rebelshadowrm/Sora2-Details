@@ -244,6 +244,74 @@ def main():
         enemy_attack["source_actor_id"] = 60051
         assert enemy_bridge.lookup_enemy_move(
             enemy_attack, observed_effect_descriptor(enemy_attack)) is None
+        reset_marker = root / "retry.reset.json"
+        retry_bridge = LiveBridge(root / "retry_encounters", "retry.jsonl",
+                                  reset_path=reset_marker)
+        retry_bridge.handle({"at": "2026-09-28T10:00:00.000-05:00",
+                             "kind": "hit", "name": "BattleInit"})
+        original_id = retry_bridge.current["id"]
+        retry_bridge.handle({"at": "2026-09-28T10:00:10.000-05:00",
+                             "kind": "hit", "name": "BattleEnd"})
+        retry_bridge.handle({"at": "2026-09-28T10:00:20.000-05:00",
+                             "kind": "hit", "name": "AttackEffectCall", "tid": 1})
+        assert retry_bridge.current is None and not reset_marker.exists()
+        for actor_id in range(4):
+            retry_bridge.handle({"at": f"2026-09-28T10:00:20.00{actor_id}-05:00",
+                                 "kind": "hit", "name": "HpSet", "status_actor_id": actor_id,
+                                 "status_ptr": f"0x{actor_id + 1:x}", "hp_before": 50,
+                                 "hp_max": 100, "requested_hp": 0})
+            assert reset_marker.exists() == (actor_id == 3)
+        assert retry_bridge.current is None
+        assert json.loads(reset_marker.read_text(encoding="utf-8"))["reason"] == (
+            "party_status_reset_outside_battle")
+        retry_bridge.handle({"at": "2026-09-28T10:00:30.000-05:00",
+                             "kind": "hit", "name": "BattleInit"})
+        assert retry_bridge.current["id"] != original_id
+        assert len(list((root / "retry_encounters").glob("*.json"))) == 2
+        wipe_bridge = LiveBridge(root / "wipe_encounters", "walter-retry.jsonl")
+        wipe_bridge.handle({"at": "2026-09-28T16:00:00.000-05:00",
+                            "kind": "hit", "name": "BattleInit"})
+        first_attempt_id = wipe_bridge.current["id"]
+        for actor_id in range(4):
+            wipe_bridge.handle({"at": f"2026-09-28T16:00:10.00{actor_id}-05:00",
+                                "kind": "hit", "name": "HpSet", "tid": 1,
+                                "status_actor_id": actor_id,
+                                "status_ptr": f"0x{actor_id + 1:x}",
+                                "hp_before": 50, "hp_max": 100,
+                                "requested_hp": -1})
+        assert wipe_bridge.pending_wipe is not None
+        # Retry restores status directly; the next setter reads a member full.
+        wipe_bridge.handle({"at": "2026-09-28T16:01:22.000-05:00",
+                            "kind": "hit", "name": "HpSet", "tid": 1,
+                            "status_actor_id": 3, "status_ptr": "0x4",
+                            "hp_before": 100, "hp_max": 100, "requested_hp": 120})
+        assert wipe_bridge.current["id"] != first_attempt_id
+        assert wipe_bridge.encounter_index == 2
+        attempts = [json.loads(path.read_text(encoding="utf-8"))
+                    for path in (root / "wipe_encounters").glob("*.json")]
+        assert sorted(attempt["outcome"] for attempt in attempts) == ["Defeat", "InProgress"]
+        assert any("Retry entry inferred" in issue for issue in wipe_bridge.current["issues"])
+        revive_bridge = LiveBridge(root / "revive_encounters", "revive.jsonl")
+        revive_bridge.handle({"at": "2026-09-28T16:00:00.000-05:00",
+                              "kind": "hit", "name": "BattleInit"})
+        revived_fight_id = revive_bridge.current["id"]
+        for actor_id in range(4):
+            revive_bridge.handle({"at": f"2026-09-28T16:00:10.00{actor_id}-05:00",
+                                  "kind": "hit", "name": "HpSet", "tid": 1,
+                                  "status_actor_id": actor_id,
+                                  "status_ptr": f"0x{actor_id + 1:x}",
+                                  "hp_before": 50, "hp_max": 100,
+                                  "requested_hp": -1})
+        revive_bridge.handle({"at": "2026-09-28T16:00:11.000-05:00",
+                              "kind": "hit", "name": "HpSet", "tid": 1,
+                              "status_actor_id": 0, "status_ptr": "0x1",
+                              "hp_before": 0, "hp_max": 100, "requested_hp": 50})
+        assert revive_bridge.pending_wipe is None
+        revive_bridge.handle({"at": "2026-09-28T16:01:22.000-05:00",
+                              "kind": "hit", "name": "HpSet", "tid": 1,
+                              "status_actor_id": 3, "status_ptr": "0x4",
+                              "hp_before": 100, "hp_max": 100, "requested_hp": 120})
+        assert revive_bridge.current["id"] == revived_fight_id
     print("Synthetic live bridge scope, pairing, knockout, and persistence checks passed.")
 
 

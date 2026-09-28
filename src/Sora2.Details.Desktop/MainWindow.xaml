@@ -92,7 +92,8 @@
                 <RowDefinition Height="22" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Background="#292B2E" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+            <Grid Grid.Row="0" Background="#292B2E" MouseLeftButtonDown="Header_MouseLeftButtonDown"
+                  MouseRightButtonUp="Header_MouseRightButtonUp">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -106,8 +107,8 @@
                 <Button x:Name="ModeButton" Grid.Column="0" Style="{StaticResource ChromeButton}"
                         HorizontalContentAlignment="Left" FontWeight="SemiBold" Click="ModeButton_Click"
                         ToolTip="Choose Damage, Healing, Taken, or Deaths" />
-                <Border Grid.Column="1" Background="Transparent" Cursor="SizeAll"
-                        ToolTip="Drag to move the meter" />
+                <Border x:Name="HeaderDragArea" Grid.Column="1" Background="Transparent" Cursor="SizeAll"
+                        ToolTip="Drag to move · right-click for display settings" />
                 <Button Grid.Column="2" Style="{StaticResource ChromeButton}" Content="▾"
                         FontSize="15" ToolTip="Recent encounters and full history" Click="HistoryButton_Click" />
                 <Button Grid.Column="3" Style="{StaticResource ChromeButton}" Content="◷"
@@ -122,7 +123,7 @@
                         FontSize="17" ToolTip="Close" Click="CloseButton_Click" />
             </Grid>
 
-            <Grid Grid.Row="1" Background="#202226" Cursor="SizeAll"
+            <Grid x:Name="EncounterHeader" Grid.Row="1" Background="#202226" Cursor="SizeAll"
                   MouseLeftButtonDown="Header_MouseLeftButtonDown"
                   ToolTip="Drag to move the meter">
                 <Grid.ColumnDefinitions>
@@ -136,14 +137,16 @@
                 <TextBlock x:Name="EncounterLabel" Grid.Column="1" Margin="6,3,5,0" Foreground="#BFC3C8"
                            TextTrimming="CharacterEllipsis" FontSize="11" />
                 <TextBlock x:Name="DataSourceLabel" Grid.Column="2" Margin="4,3,7,0" Text="SAMPLE" FontSize="10"
-                           Foreground="#E8BD69" FontWeight="Bold" />
+                           Foreground="#E8BD69" FontWeight="Bold" Cursor="Hand"
+                           MouseLeftButtonUp="CaptureStatus_Click" />
             </Grid>
 
             <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <ItemsControl x:Name="MeterRows">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Height="23" Margin="2,1,2,0" Padding="0"
+                            <Button Height="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=Tag}"
+                                    Margin="2,1,2,0" Padding="0"
                                     Style="{StaticResource MeterRowButton}" Click="MeterRow_Click"
                                     PreviewMouseRightButtonDown="MeterRow_RightClick"
                                     ToolTip="{Binding HoverContent}">
@@ -180,7 +183,7 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <Grid Grid.Row="3" Background="#202226" Cursor="SizeAll"
+            <Grid x:Name="FooterDragArea" Grid.Row="3" Background="#202226" Cursor="SizeAll"
                   MouseLeftButtonDown="Header_MouseLeftButtonDown"
                   ToolTip="Drag to move the meter">
                 <TextBlock x:Name="FooterLabel" Margin="6,3,6,0" Foreground="#AEB4BC"

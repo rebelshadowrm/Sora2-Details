@@ -1,12 +1,28 @@
-# Sora 2 Details 0.2.0 preview 7
+# Sora 2 Details 0.2.0 preview 8
+
+## What changed in this preview
+
+- Closing the meter during capture now requests a clean probe detach before exit. If detachment cannot be confirmed, the meter warns and asks before exiting anyway.
+- The compact status shows Ready, Capturing, Stopping, or Error. Click it for the full message and installed version.
+- Recent and full history show each encounter's time, outcome, and PARTIAL status.
+- Display settings now persist position lock, opacity, always-on-top, text size, and a visible-row height preset. Find them under the meter title or by right-clicking the header.
+- A save reload or Retry that clears party status after a fight now returns the current meter to a waiting state. The previous attempt remains in history; the next verified command-battle entry starts a fresh meter.
+- The Walter defeat/retry trace showed the game restoring party HP directly without either battle boundary callback. The logger now splits that observed full-party wipe and direct reset into separate partial attempts, marking the defeat and retry entry as inferred.
+- The installer and Velopack portable build now bundle only the tools needed for normal capture. Research tools remain in the source checkout and legacy research ZIP.
+
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Install once, then use the meter's update button for later previews. `Sora2.Details-win-x64-preview-Portable.zip` is available if you prefer a portable build.
+
+## Using the preview
 
 This Windows preview provides a compact meter and durable **partial** command-battle combat log. It records observed HP changes and some attributed damaging hits; support actions, misses, some move names, and critical status remain incomplete. It is not yet a complete combat log.
 
-Install once from `Sora2.Details-win-x64-preview-Setup.exe`, then open Sora 2 Details from the desktop or Start menu. The installer bundles the .NET app and Python 3.13.15, so no separate runtime install is needed. The portable ZIP remains available.
+The installer bundles the .NET app and Python 3.13.15, so no separate runtime install is needed.
 
 Start the supported game, then open the meter. It automatically starts a 12-hour read-only command-battle capture and requests Windows administrator approval. Click **■** to detach early or **●** to retry capture. Start capture before entering a command battle; an already-open fight cannot be reconstructed. The meter displays saved encounters when the game is closed.
 
-The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them.
+The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
+
+## Earlier preview changes
 
 Preview 2 also recognizes a game-exit trace as a completed capture, so it does not wait for a detach record when the game has already closed.
 

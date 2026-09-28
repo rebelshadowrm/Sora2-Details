@@ -1,4 +1,5 @@
 using System.IO;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -23,7 +24,12 @@ public partial class MainWindow : Window
     private string? _sourceKey;
     private string? _moveKey;
     private readonly DispatcherTimer _placementSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private readonly DispatcherTimer _captureStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private MeterDisplaySettings _displaySettings = MeterDisplaySettings.Load();
     private bool _placementReady;
+    private bool _exitAfterDetach;
+    private bool _closeWhenReady;
+    private DateTimeOffset? _observedResetAt;
 
     public MainWindow()
     {
@@ -36,10 +42,20 @@ public partial class MainWindow : Window
             Width = placement.Width;
             Height = placement.Height;
         }
+        ApplyDisplaySettings(resizeToRows: false);
         _placementSaveTimer.Tick += (_, _) =>
         {
             _placementSaveTimer.Stop();
             SavePlacement();
+        };
+        _captureStatusTimer.Tick += (_, _) =>
+        {
+            RefreshCaptureStatus();
+            var resetAt = ActiveSessionResetAt();
+            if (resetAt == _observedResetAt) return;
+            _observedResetAt = resetAt;
+            if (resetAt is not null) _followNewest = true;
+            ReloadHistory();
         };
         Loaded += (_, _) => _placementReady = true;
         Loaded += async (_, _) => await CheckForUpdatesAsync();
@@ -47,18 +63,13 @@ public partial class MainWindow : Window
         {
             RefreshCaptureButton();
             ReloadHistory();
+            _captureStatusTimer.Start();
             if (!_researchMode && ActiveTraceName() is null) await StartCaptureAsync();
         };
         LocationChanged += (_, _) => QueuePlacementSave();
         SizeChanged += (_, _) => QueuePlacementSave();
-        Closing += (_, _) =>
-        {
-            _placementSaveTimer.Stop();
-            SavePlacement();
-        };
-        var historyPath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Sora2 Details", "encounters");
+        Closing += MainWindow_Closing;
+        var historyPath = System.IO.Path.Combine(MeterDataDirectory.PathName, "encounters");
         System.IO.Directory.CreateDirectory(historyPath);
         _store = new EncounterStore(historyPath);
         var samplePath = System.IO.Path.Combine(AppContext.BaseDirectory, "samples", "command-battles.json");
@@ -73,11 +84,58 @@ public partial class MainWindow : Window
         _captureTask = _researchMode ? Task.CompletedTask : Task.Run(ReceiveCaptureAsync);
         Closed += (_, _) =>
         {
+            _captureStatusTimer.Stop();
+            _placementSaveTimer.Stop();
+            SavePlacement();
             _captureCancellation.Cancel();
             _captureTask.GetAwaiter().GetResult();
             _captureCancellation.Dispose();
             _historyWatcher.Dispose();
         };
+    }
+
+    private async void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        if (_exitAfterDetach || _researchMode || !CaptureMayBeActive() && !_captureBusy) return;
+        e.Cancel = true;
+        if (_captureBusy)
+        {
+            _closeWhenReady = true;
+            return;
+        }
+        _captureBusy = true;
+        _captureStopping = true;
+        RefreshCaptureStatus();
+        try
+        {
+            if (await EnsureCaptureDetachedAsync())
+            {
+                _exitAfterDetach = true;
+                Close();
+                return;
+            }
+            SetCaptureError("Capture did not detach within 30 seconds. The meter remains open. Try Stop again, or use Stop-Sora2Details.cmd.");
+        }
+        catch (Exception exception)
+        {
+            SetCaptureError($"Capture could not detach: {exception.Message}. The meter remains open; try Stop again.");
+        }
+        finally
+        {
+            _captureStopping = false;
+            _captureBusy = false;
+            _closeWhenReady = false;
+            RefreshCaptureStatus();
+        }
+        var exitAnyway = MessageBox.Show(this,
+            $"{_captureStatusError}\n\nExit anyway? The external probe may keep running. Choose No to leave the meter open and retry Stop.",
+            "Capture may still be running", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (exitAnyway == MessageBoxResult.Yes)
+        {
+            _exitAfterDetach = true;
+            Close();
+        }
     }
 
     private void QueuePlacementSave()
@@ -110,8 +168,8 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) when (_captureCancellation.IsCancellationRequested) { }
         catch (Exception exception)
         {
-            _captureError = exception.Message;
-            if (!Dispatcher.HasShutdownStarted) _ = Dispatcher.BeginInvoke(RenderMeter);
+            _captureError = $"Capture listener failed: {exception.Message}. Restart the meter to retry.";
+            if (!Dispatcher.HasShutdownStarted) _ = Dispatcher.BeginInvoke(RefreshCaptureStatus);
         }
     }
 
@@ -119,8 +177,6 @@ public partial class MainWindow : Window
     {
         if (_researchMode)
         {
-            DataSourceLabel.Text = "RESEARCH";
-            DataSourceLabel.ToolTip = "Partial research replay of observed live HP changes; see the encounter issues for coverage limits.";
             SelectEncounter(_encounters.FirstOrDefault(e => e.Id == _selectedEncounter?.Id)
                 ?? _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault());
             return;
@@ -134,16 +190,11 @@ public partial class MainWindow : Window
             _sampleMode = false;
         }
         var activeTrace = ActiveTraceName();
-        DataSourceLabel.Text = _captureError is not null ? "ERROR" : activeTrace is not null && _followNewest ? "ARMED" :
-            _sampleMode ? "SAMPLE" : "RECORDED";
-        DataSourceLabel.ToolTip = _captureError ?? (activeTrace is not null && _followNewest
-            ? "Capture is active. Waiting for a command-battle entry or showing this session's latest fight."
-            : _sampleMode
-            ? "Sample replay. No game capture adapter is connected."
-            : "Saved encounter history.");
         var newest = _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault();
+        var resetAt = activeTrace is null ? null : ActiveSessionResetAt();
         var current = activeTrace is null ? newest : _encounters.FirstOrDefault(e =>
-            e.Issues?.Contains($"Raw trace: {activeTrace}") == true);
+            e.Issues?.Contains($"Raw trace: {activeTrace}") == true &&
+            (resetAt is null || e.StartedAt > resetAt.Value));
         SelectEncounter(_followNewest ? current :
             _encounters.FirstOrDefault(e => e.Id == _selectedEncounter?.Id) ?? newest);
     }
@@ -163,11 +214,7 @@ public partial class MainWindow : Window
 
     private void RenderMeter()
     {
-        if (_captureError is not null)
-        {
-            DataSourceLabel.Text = "ERROR";
-            DataSourceLabel.ToolTip = _captureError;
-        }
+        RefreshCaptureStatus();
         ModeButton.Content = _mode switch
         {
             MeterMode.Damage => "Damage Done  ▾",
@@ -177,13 +224,16 @@ public partial class MainWindow : Window
             _ => "Meter  ▾"
         };
         var waiting = _selectedEncounter is null && ActiveTraceName() is not null && _followNewest;
+        var resetWaiting = waiting && ActiveSessionResetAt() is not null;
         EncounterLabel.Text = _selectedEncounter?.Label ??
-            (waiting ? "Waiting for next command battle" : "No encounter selected");
+            (resetWaiting ? "Session reset · waiting for battle" :
+                waiting ? "Waiting for next command battle" : "No encounter selected");
         if (_selectedEncounter is null)
         {
             MeterRows.ItemsSource = null;
             BackButton.Visibility = Visibility.Collapsed;
-            FooterLabel.Text = waiting ? "Capture armed · enter a new command battle" : "No encounters";
+            FooterLabel.Text = resetWaiting ? "Previous fight is in history · awaiting battle entry" :
+                waiting ? "Capture armed · enter a new command battle" : "No encounters";
             FooterLabel.ToolTip = waiting
                 ? "A battle already open when capture starts cannot be reconstructed. Open the encounter menu for saved fights."
                 : null;
@@ -193,22 +243,6 @@ public partial class MainWindow : Window
         var rows = EncounterProjection.Rows(_selectedEncounter, _mode);
         var livePartial = !_researchMode && _selectedEncounter.Issues?.Any(issue =>
             issue.StartsWith("Live partial capture:", StringComparison.Ordinal)) == true;
-        var activeTrace = ActiveTraceName();
-        var selectedFromActiveTrace = activeTrace is not null &&
-            _selectedEncounter.Issues?.Contains($"Raw trace: {activeTrace}") == true;
-        if (livePartial && _captureError is null && (activeTrace is null || selectedFromActiveTrace))
-        {
-            DataSourceLabel.Text = selectedFromActiveTrace ? "LIVE / PARTIAL" : "PARTIAL";
-            DataSourceLabel.ToolTip = "Observed game results with known coverage gaps. Open the timeline or footer for details.";
-        }
-        else if (_captureError is null && !_researchMode)
-        {
-            DataSourceLabel.Text = activeTrace is not null && _followNewest ? "ARMED" :
-                _sampleMode ? "SAMPLE" : "RECORDED";
-            DataSourceLabel.ToolTip = activeTrace is not null && _followNewest
-                ? "Capture is active. Waiting for a command-battle entry or showing this session's latest fight."
-                : "Saved encounter history.";
-        }
         IReadOnlyList<MeterDisplayRow> displayRows;
         var displayedTotal = rows.Sum(row => row.Value);
         var selectedSource = rows.FirstOrDefault(row => row.Key == _sourceKey);
@@ -260,6 +294,8 @@ public partial class MainWindow : Window
             choice.Click += (_, _) => { _mode = mode; ResetDrill(); RenderMeter(); };
             menu.Items.Add(choice);
         }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(BuildDisplaySettingsMenu());
         OpenMenu(menu, (Button)sender);
     }
 
@@ -277,7 +313,7 @@ public partial class MainWindow : Window
         }
         foreach (var encounter in EncounterProjection.Recent(_encounters))
         {
-            var choice = new MenuItem { Header = encounter.Label, IsCheckable = true,
+            var choice = new MenuItem { Header = HistoryWindow.Describe(encounter), IsCheckable = true,
                 IsChecked = (activeTrace is null || !_followNewest) &&
                     encounter.Id == _selectedEncounter?.Id };
             choice.Click += (_, _) =>
@@ -401,6 +437,7 @@ public partial class MainWindow : Window
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_displaySettings.LockPosition) return;
         var source = e.OriginalSource as DependencyObject;
         while (source is not null)
         {

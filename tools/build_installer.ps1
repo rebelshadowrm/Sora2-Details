@@ -1,4 +1,7 @@
-param([string]$Version = '0.2.0-preview.1')
+param(
+    [string]$Version = '0.2.0-preview.1',
+    [string]$OutputDir
+)
 
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
@@ -7,7 +10,8 @@ if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
 
 $root = Split-Path $PSScriptRoot -Parent
 $releaseRoot = Join-Path $root 'releases'
-$output = Join-Path $releaseRoot 'velopack-preview'
+$output = if ($OutputDir) { [IO.Path]::GetFullPath($OutputDir) }
+    else { Join-Path $releaseRoot 'velopack-preview' }
 $downloadDir = Join-Path $root '.research-deps\downloads'
 $pythonZip = Join-Path $downloadDir 'python-3.13.15-embed-amd64.zip'
 $pythonHash = 'D1F04D990AEE1253D8569E8E5104E30FA9F5FA830899F14843448872D936A2CF'
@@ -39,9 +43,17 @@ try {
     $tools = Join-Path $stage 'tools'
     $python = Join-Path $stage 'python'
     New-Item -ItemType Directory -Path $tools, $python -Force | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $root 'tools') -File |
-        Where-Object { $_.Extension -in '.py', '.ps1' } |
-        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $tools }
+    # Only the session launcher and its direct Python dependencies belong in an installed build.
+    # The source checkout and the legacy ZIP builder retain the research tools.
+    $runtimeTools = @(
+        'start_session_logger.ps1', 'start_live_meter.ps1', 'start_probe_session.ps1',
+        'stop_live_meter.ps1', 'elevated_probe_session.py', 'lifecycle_probe.py',
+        'live_capture_bridge.py', 'status_name_index.py', 'name_table_index.py',
+        'enemy_ai_skill_index.py', 'skill_table_index.py', 'match_enemy_status.py'
+    )
+    foreach ($name in $runtimeTools) {
+        Copy-Item -LiteralPath (Join-Path $root "tools\$name") -Destination $tools
+    }
     foreach ($name in @('Start-Sora2Details.ps1', 'Start-Sora2Details.cmd',
                        'Stop-Sora2Details.ps1', 'Stop-Sora2Details.cmd', 'README.md', 'RELEASE-NOTES.md')) {
         Copy-Item -LiteralPath (Join-Path $root $name) -Destination $stage
@@ -51,7 +63,7 @@ try {
     if (-not (Test-Path -LiteralPath $pth)) { throw 'Embedded Python path file was not found.' }
     Add-Content -LiteralPath $pth -Value '..\tools' -Encoding ASCII
     foreach ($script in @('elevated_probe_session.py', 'live_capture_bridge.py')) {
-        & (Join-Path $python 'python.exe') (Join-Path $tools $script) --help | Out-Null
+        & (Join-Path $python 'python.exe') -B (Join-Path $tools $script) --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Embedded Python could not run $script." }
     }
 
