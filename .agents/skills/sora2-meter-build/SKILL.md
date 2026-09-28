@@ -9,6 +9,8 @@ The [advanced combat log](../../../docs/COMBAT-LOG-PRIORITY.md) is the primary p
 
 Work in the Sora2-Details repository. Read the relevant parts of [the build plan](../../../BUILD-PLAN.md) and [README](../../../README.md) before changing architecture. Read [the hook research handoff](../../../docs/HOOK-RESEARCH-HANDOFF.md) when the task touches game capture, executable addresses, or skill metadata. Inspect the current code before treating a planned component as already implemented.
 
+For the current installed preview, `tools/lifecycle_probe.py` writes bounded raw JSONL under `%LOCALAPPDATA%\Sora2 Details\live`, and `tools/live_capture_bridge.py` writes partial encounter snapshots under `%LOCALAPPDATA%\Sora2 Details\encounters`. Keep raw evidence durable across app updates and distinguish the Python bridge from the fuller `ICombatCaptureSource` design. Use [sora2-meter-publish](../sora2-meter-publish/SKILL.md) when packaging or publishing builds.
+
 ## Product invariants
 
 - Capture **command battles only**. Start with the verified command-battle boundary and entry HP/status state; exclude earlier field effects.
@@ -24,6 +26,7 @@ Work in the Sora2-Details repository. Read the relevant parts of [the build plan
 - A later same-target Air Strike sequence gave target status `+0x7C = 0` on a reported non-crit and `3` on two reported crits, but a following battle ended with a player-confirmed **non-critical** Stone Hammer for which both source `+0x30` and target `+0x7C` were `3`. The earlier two reported crits in that fight fell inside a capture restart gap. Preserve both raw fields and keep `IsCritical` null; trace the game's actual per-target critical decision or display path before decoding.
 - For live name research, decide which context, status, and linked-object bytes are needed before arming a probe. Gather them in one bounded, hash-gated elevated run; avoid a new administrator prompt for each follow-up read. Stop live probing when the player reports prompt fatigue and continue from saved evidence.
 - Distinguish resolved amount from effective HP change and retain both when available. Avoid overkill/overheal inflation in default effective totals. Count one result per target application, not per visual hit or target animation.
+- The current attack-result hook verifies some damaging hits, while the shared HP setter observes healing without a verified source, item, move, or support-proc identity. Keep ability and random-proc heals unattributed until a captured execution/effect context proves their source. Preserve HP-setter frame evidence and compare a controlled heal with a proc heal; do not assign the nearest preceding action. See [the heal/lookup gap audit](../../../docs/HEAL-AND-ENEMY-LOOKUP-GAPS-20260928.md).
 - Display damage totals first. Add DPS only after defining and validating the time base across menus, pauses, animation speed changes, and encounter transitions; label its time basis.
 
 ## Capture decisions
