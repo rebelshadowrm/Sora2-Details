@@ -249,13 +249,20 @@ public partial class MainWindow : Window
         var displayedTotal = rows.Sum(row => row.Value);
         var selectedSource = rows.FirstOrDefault(row => row.Key == _sourceKey);
         if (_sourceKey is not null && selectedSource is null) ResetDrill();
-        if (selectedSource is null || _mode == MeterMode.Deaths)
+        if (selectedSource is null)
         {
             var maximum = rows.Count == 0 ? 0 : rows.Max(row => row.Value);
             displayRows = rows.Select((row, index) => MeterDisplayRow.From(row, index, maximum, _mode,
                     ThemeForSource(row.Key))
-                with { Preview = _mode == MeterMode.Deaths ? null :
-                    new MeterPreview($"{row.Name} · moves", BuildMoveRows(row.Key)) }).ToArray();
+                with { Preview = _mode == MeterMode.Deaths
+                    ? new MeterPreview($"{row.Name} · deaths", BuildDeathRows(row.Key))
+                    : new MeterPreview($"{row.Name} · moves", BuildMoveRows(row.Key)) }).ToArray();
+        }
+        else if (_mode == MeterMode.Deaths)
+        {
+            displayRows = BuildDeathRows(_sourceKey!);
+            displayedTotal = selectedSource.Value;
+            EncounterLabel.Text += $" · {selectedSource.Name}";
         }
         else
         {
@@ -275,7 +282,9 @@ public partial class MainWindow : Window
             ? livePartial ? "  ·  LIVE PARTIAL" : "  ·  IN PROGRESS"
             : _selectedEncounter.IsComplete ? "" : "  ·  PARTIAL";
         FooterLabel.Text = $"{displayedTotal:N0} total{quality}  ·  " +
-            (_moveKey is not null ? "right-click to go back" : "hover to preview · click to enter");
+            (_mode == MeterMode.Deaths && _sourceKey is not null
+                ? "click a death for recap · right-click to go back"
+                : _moveKey is not null ? "right-click to go back" : "hover to preview · click to enter");
         FooterLabel.ToolTip = _selectedEncounter.Issues is { Count: > 0 }
             ? string.Join(Environment.NewLine, _selectedEncounter.Issues)
             : _selectedEncounter.Outcome == EncounterOutcome.InProgress ? "Encounter is still in progress." : null;
@@ -354,7 +363,16 @@ public partial class MainWindow : Window
         if (_selectedEncounter is null || ((Button)sender).DataContext is not MeterDisplayRow row) return;
         if (_mode == MeterMode.Deaths)
         {
-            new BreakdownWindow(_selectedEncounter, _mode, row.Key) { Owner = this }.ShowDialog();
+            if (_sourceKey is null)
+            {
+                _sourceKey = row.Key;
+                RenderMeter();
+            }
+            else if (row.Key.StartsWith("death:", StringComparison.Ordinal) &&
+                long.TryParse(row.Key["death:".Length..], out var sequence))
+            {
+                new TimelineWindow(_selectedEncounter, sequence) { Owner = this }.ShowDialog();
+            }
             return;
         }
         if (_sourceKey is null) _sourceKey = row.Key;
@@ -391,6 +409,27 @@ public partial class MainWindow : Window
                 $"{group.Name} ({group.Hits.Count})", group.Value, index, maximum,
                 $"{group.Name}: {group.Value:N0} effective · {group.DamageClass} · {group.Hits.Count} hit(s)",
                 new MeterPreview($"{group.Name} · hits", BuildHitRows(group, theme, icon)), theme, icon);
+        }).ToArray();
+    }
+
+    private IReadOnlyList<MeterDisplayRow> BuildDeathRows(string victimKey)
+    {
+        if (_selectedEncounter is null) return [];
+        var actors = _selectedEncounter.Actors.ToDictionary(actor => actor.Id);
+        var deaths = _selectedEncounter.Events
+            .Where(effect => effect.Kind == CombatEventKind.Knockout && effect.TargetId == victimKey)
+            .OrderBy(effect => effect.Sequence)
+            .ToArray();
+        var theme = ThemeForSource(victimKey);
+        return deaths.Select((death, index) =>
+        {
+            var source = death.SourceId is not null && actors.TryGetValue(death.SourceId, out var actor)
+                ? actor.Name : "Unknown source";
+            var cause = death.MoveName ?? "Unknown cause";
+            return MeterDisplayRow.Breakdown($"death:{death.Sequence}",
+                $"{death.ObservedAt.ToLocalTime():HH:mm:ss} · {source}", 1, index, 1,
+                $"Death #{index + 1} · event #{death.Sequence}\n{source} · {cause}\nClick for recent recap",
+                theme: theme) with { ValueLabel = cause };
         }).ToArray();
     }
 

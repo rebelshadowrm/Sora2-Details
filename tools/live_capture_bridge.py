@@ -133,7 +133,7 @@ class LiveBridge:
         self.reset_actors = set()
         self.last_reset_at = None
         self.last_end_at = None
-        self.recent_party_kos = []
+        self.knocked_out_party = set()
         self.pending_wipe = None
         self.observed_party_hp = {}
 
@@ -337,7 +337,7 @@ class LiveBridge:
                 self.current["label"] += " · interrupted"
             self.save()
         self.pending.clear()
-        self.recent_party_kos.clear()
+        self.knocked_out_party.clear()
         self.pending_wipe = None
         self.observed_party_hp.clear()
         self.reset_actors.clear()
@@ -415,15 +415,15 @@ class LiveBridge:
             return True
         after = max(0, min(maximum, requested))
         self.observed_party_hp[pointer] = after
-        if before == 0 and after > 0 and self.pending_wipe is not None:
-            # A watched revive means the command battle continued.
-            self.pending_wipe = None
-            self.recent_party_kos.clear()
-        if before > 0 and after == 0:
-            self.recent_party_kos = [item for item in self.recent_party_kos
-                                     if (observed_at - item[0]).total_seconds() <= 1]
-            self.recent_party_kos.append((observed_at, actor_id))
-            if len({item[1] for item in self.recent_party_kos}) >= 4:
+        if after > 0:
+            # A watched revive means the command battle continued. Keep other
+            # knocked-out members, whose deaths may have occurred turns earlier.
+            self.knocked_out_party.discard(actor_id)
+            if before == 0 and self.pending_wipe is not None:
+                self.pending_wipe = None
+        elif before > 0:
+            self.knocked_out_party.add(actor_id)
+            if len(self.knocked_out_party) >= 4 and self.pending_wipe is None:
                 self.pending_wipe = observed_at
         return False
 

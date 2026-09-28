@@ -291,6 +291,25 @@ def main():
                     for path in (root / "wipe_encounters").glob("*.json")]
         assert sorted(attempt["outcome"] for attempt in attempts) == ["Defeat", "InProgress"]
         assert any("Retry entry inferred" in issue for issue in wipe_bridge.current["issues"])
+        staggered_bridge = LiveBridge(root / "staggered_retry", "staggered.jsonl")
+        staggered_bridge.handle({"at": "2026-09-28T16:00:00.000-05:00",
+                                 "kind": "hit", "name": "BattleInit"})
+        staggered_id = staggered_bridge.current["id"]
+        for actor_id in range(4):
+            staggered_bridge.handle({"at": f"2026-09-28T16:0{actor_id + 1}:00.000-05:00",
+                                     "kind": "hit", "name": "HpSet", "tid": 1,
+                                     "status_actor_id": actor_id,
+                                     "status_ptr": f"0x{actor_id + 1:x}",
+                                     "hp_before": 50, "hp_max": 100,
+                                     "requested_hp": -1})
+        assert staggered_bridge.pending_wipe is not None
+        staggered_bridge.handle({"at": "2026-09-28T16:06:00.000-05:00",
+                                 "kind": "hit", "name": "HpSet", "tid": 1,
+                                 "status_actor_id": 0, "status_ptr": "0x1",
+                                 "hp_before": 100, "hp_max": 100,
+                                 "requested_hp": 90})
+        assert staggered_bridge.current["id"] != staggered_id
+        assert staggered_bridge.current["outcome"] == "InProgress"
         revive_bridge = LiveBridge(root / "revive_encounters", "revive.jsonl")
         revive_bridge.handle({"at": "2026-09-28T16:00:00.000-05:00",
                               "kind": "hit", "name": "BattleInit"})

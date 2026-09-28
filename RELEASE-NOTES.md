@@ -1,12 +1,11 @@
-# Sora 2 Details 0.2.0 preview 9
+# Sora 2 Details 0.2.0 preview 10
 
 ## What changed in this preview
 
-- Opacity now applies to the entire meter window, including its background and header.
-- Click-through mode passes mouse clicks to the game. Restore interaction by double-clicking the Sora 2 Details system-tray icon or choosing **Restore interaction and show meter** from its menu.
-- Removed the Visible rows setting; resize the meter directly to show more or fewer rows.
+- Deaths now drills into a character's knockouts inside the meter. Click a knockout once to open its recent recap; right-click or use the back button to return to death counts.
+- Retry detection now handles party knockouts spread across several turns before an unobserved full-HP reset. The new attempt remains marked as an inferred, partial capture.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 9 with the meter's update button.
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 10 with the meter's update button.
 
 ## Using the preview
 
@@ -19,6 +18,8 @@ Start the supported game, then open the meter. It automatically starts a 12-hour
 The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
 
 ## Earlier preview changes
+
+Preview 9 applied opacity to the whole window, added tray-controlled click-through, and removed the Visible rows setting.
 
 Preview 8 added clean capture detach on exit, persistent capture state and version, richer encounter history, position lock, always-on-top, text size, and a local retry-splitting fallback verified against the Walter trace. It also reduced installed runtime files to those needed for capture and updating.
 
