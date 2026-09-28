@@ -28,7 +28,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        if (MeterWindowPlacement.Load() is { } placement)
+        if (WindowPlacement.Load("meter-window.json") is { } placement)
         {
             WindowStartupLocation = WindowStartupLocation.Manual;
             Left = placement.Left;
@@ -88,7 +88,7 @@ public partial class MainWindow : Window
         var bounds = WindowState == WindowState.Normal
             ? new Rect(Left, Top, ActualWidth, ActualHeight)
             : RestoreBounds;
-        try { MeterWindowPlacement.Save(bounds); }
+        try { WindowPlacement.Save("meter-window.json", bounds); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             // Window preferences are optional; a protected settings folder must not close the meter.
@@ -333,8 +333,13 @@ public partial class MainWindow : Window
         {
             var target = actors.TryGetValue(hit.TargetId, out var actor) ? actor.Name : hit.TargetId;
             var name = $"{hit.ObservedAt.ToLocalTime():HH:mm:ss.fff} → {target}";
+            var amounts = DamageAmounts.From(hit);
+            var isDamage = hit.Kind == CombatEventKind.Damage;
             var tooltip = $"Result #{hit.Sequence} · {group.Name} → {target}\n" +
-                $"Effective: {hit.EffectiveAmount?.ToString("N0") ?? "unknown"} · Type: {hit.DamageClass}\n" +
+                $"{(isDamage ? "Total hit" : "Total result")}: {amounts.Total?.ToString("N0") ?? "unknown"}\n" +
+                $"Effective: {amounts.Effective?.ToString("N0") ?? "unknown"}\n" +
+                (isDamage ? $"Overkill: {amounts.Overkill?.ToString("N0") ?? "unknown"}\n" : "") +
+                $"Type: {hit.DamageClass}\n" +
                 $"Critical: {(hit.IsCritical is null ? "unverified" : hit.IsCritical.Value ? "yes" : "no")}\n" +
                 $"HP: {hit.HpBefore?.ToString("N0") ?? "?"} → {hit.HpAfter?.ToString("N0") ?? "?"}\n" +
                 $"Raw flags: {(hit.RawResultFlags is { } flags ? $"0x{flags:X}" : "unavailable")}\n" +
@@ -342,8 +347,11 @@ public partial class MainWindow : Window
                 $"Target status +0x7C: {(hit.RawTargetStatus7C is { } status7C ? $"0x{status7C:X}" : "unavailable")}\n" +
                 $"Raw effect: {hit.RawEffectId ?? "unavailable"}" +
                 (hit.RawEffectCode is { } code ? $" · code 0x{code:X}" : "");
-            return MeterDisplayRow.Breakdown($"hit:{hit.Sequence}", name, hit.EffectiveAmount ?? 0,
+            var row = MeterDisplayRow.Breakdown($"hit:{hit.Sequence}", name, hit.EffectiveAmount ?? 0,
                 index, maximum, tooltip, theme: theme, icon: icon);
+            return amounts.Overkill is > 0
+                ? row with { ValueLabel = $"{MeterDisplayRow.FormatAmount(hit.EffectiveAmount ?? 0)} (+{MeterDisplayRow.FormatAmount(amounts.Overkill.Value)} over)" }
+                : row;
         }).ToArray();
     }
 

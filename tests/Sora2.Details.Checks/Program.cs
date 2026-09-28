@@ -10,6 +10,11 @@ Check(EncounterProjection.Rows(fight, MeterMode.Taken).Sum(r => r.Value) == 140,
 Check(EncounterProjection.Rows(fight, MeterMode.Deaths).Single().Value == 1, "knockout count");
 Check(EncounterProjection.Moves(fight, MeterMode.Taken, "wolf-2").Single().DamageClass == DamageClass.Arts, "damage class");
 Check(EncounterProjection.DeathRecap(fight, 5).Select(e => e.Sequence).SequenceEqual([4, 5]), "death recap");
+var longFight = fight with { Events = Enumerable.Range(1, 25)
+    .Select(sequence => fight.Events[0] with { Sequence = sequence }).Reverse().ToArray() };
+Check(EncounterProjection.FullTimeline(longFight).Select(e => e.Sequence)
+    .SequenceEqual(Enumerable.Range(1, 25).Select(value => (long)value)),
+    "full combat log includes ordered results beyond twenty");
 var hpCost = new CombatEvent(3, fight.StartedAt, null, null, "joshua", null,
     "HP loss (source unverified)", CombatEventKind.HpLoss, 20, 100, 80);
 var costThenKnockout = fight with { Events = [hpCost, fight.Events[3], fight.Events[4]] };
@@ -107,6 +112,13 @@ var balmFight = new Encounter("balm-check", "Tear Balm", fight.StartedAt,
 Check(EncounterProjection.Rows(balmFight, MeterMode.Healing).Single().Value == 81,
     "overheal excluded from effective healing meter");
 Check(balmFight.Events.Single().ResolvedAmount == 1500, "resolved heal preserved separately");
+var overkillHit = fight.Events[0] with { EffectiveAmount = 100, ResolvedAmount = 150 };
+Check(DamageAmounts.From(overkillHit) == new DamageAmounts(150, 100, 50),
+    "hit total and effective amount expose fifty overkill");
+Check(DamageAmounts.From(overkillHit with { ResolvedAmount = null }).Overkill is null &&
+      DamageAmounts.From(overkillHit with { ResolvedAmount = 90 }).Overkill is null &&
+      DamageAmounts.From(balm).Overkill is null,
+    "unobserved or inconsistent results do not invent overkill");
 
 var unknownHit = fight.Events[0] with { SourceId = null, MoveId = null, MoveName = null,
     DamageClass = DamageClass.Unknown };

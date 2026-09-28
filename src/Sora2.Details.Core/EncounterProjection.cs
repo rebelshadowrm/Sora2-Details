@@ -85,8 +85,8 @@ public static class EncounterProjection
             .ToArray();
     }
 
-    public static IReadOnlyList<CombatEvent> RecentTimeline(Encounter encounter, int count = 20) =>
-        encounter.Events.OrderBy(effect => effect.Sequence).TakeLast(count).ToArray();
+    public static IReadOnlyList<CombatEvent> FullTimeline(Encounter encounter) =>
+        encounter.Events.OrderBy(effect => effect.Sequence).ToArray();
 
     public static IReadOnlyList<CombatEvent> DeathRecap(Encounter encounter, long knockoutSequence, int preceding = 10)
     {

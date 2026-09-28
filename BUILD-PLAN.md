@@ -47,7 +47,7 @@ Taken should answer **which enemy attacks are hurting us** by default. Preserve 
 
 ## Timeline and death recaps
 
-Retain the complete encounter event stream, not just running totals. Taken's Timeline button initially shows the most recent 20 resolved actions, expandable to the whole encounter. Allow filters for victim, attacker, move, event type, and damage classification. Keep healing, mitigation, and status context available even when opened from Taken.
+Retain the complete encounter event stream, not just running totals. The combat-log button shows all recorded events for the selected encounter; incomplete live captures must remain visibly partial. Allow filters for victim, attacker, move, event type, and damage classification. Keep healing, mitigation, and status context available even when opened from Taken. Death recap remains a short victim-focused window ending at the knockout.
 
 Each row should show action order, observed elapsed time, source, move, target, amount, HP before → after, and known classification. Group multiple targets/hits under their parent action. Treat action order as primary during command battles; timing is supplemental and should specify whether it is recorder time or verified game time.
 

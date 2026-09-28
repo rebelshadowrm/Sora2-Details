@@ -111,7 +111,7 @@
                 <Button Grid.Column="2" Style="{StaticResource ChromeButton}" Content="▾"
                         FontSize="15" ToolTip="Recent encounters and full history" Click="HistoryButton_Click" />
                 <Button Grid.Column="3" Style="{StaticResource ChromeButton}" Content="◷"
-                        FontSize="15" ToolTip="Recent timeline" Click="TimelineButton_Click" />
+                        FontSize="15" ToolTip="Full recorded combat log" Click="TimelineButton_Click" />
                 <Button x:Name="CaptureButton" Grid.Column="4" Style="{StaticResource ChromeButton}" Content="●"
                         ToolTip="Start a partial command-battle capture" Click="CaptureButton_Click" />
                 <Button x:Name="UpdateButton" Grid.Column="5" Style="{StaticResource ChromeButton}" Content="↻"

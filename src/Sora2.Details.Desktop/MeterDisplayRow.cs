@@ -63,7 +63,7 @@ public sealed record MeterDisplayRow(
         };
     }
 
-    private static string FormatAmount(int value) => value switch
+    internal static string FormatAmount(int value) => value switch
     {
         >= 1_000_000 => $"{value / 1_000_000.0:0.##}M",
         >= 10_000 => $"{value / 1_000.0:0.#}K",

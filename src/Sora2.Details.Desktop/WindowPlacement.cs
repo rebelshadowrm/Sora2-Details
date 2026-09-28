@@ -4,18 +4,19 @@ using System.Windows;
 
 namespace Sora2.Details.Desktop;
 
-internal sealed record MeterWindowPlacement(double Left, double Top, double Width, double Height)
+internal sealed record WindowPlacement(double Left, double Top, double Width, double Height)
 {
-    private static readonly string SettingsPath = Path.Combine(
+    private static string SettingsPath(string fileName) => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Sora2 Details", "meter-window.json");
+        "Sora2 Details", fileName);
 
-    public static MeterWindowPlacement? Load()
+    public static WindowPlacement? Load(string fileName)
     {
         try
         {
-            if (!File.Exists(SettingsPath)) return null;
-            var placement = JsonSerializer.Deserialize<MeterWindowPlacement>(File.ReadAllText(SettingsPath));
+            var settingsPath = SettingsPath(fileName);
+            if (!File.Exists(settingsPath)) return null;
+            var placement = JsonSerializer.Deserialize<WindowPlacement>(File.ReadAllText(settingsPath));
             return placement is not null && placement.IsValid() ? placement.FitToDesktop() : null;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
@@ -24,17 +25,18 @@ internal sealed record MeterWindowPlacement(double Left, double Top, double Widt
         }
     }
 
-    public static void Save(Rect bounds)
+    public static void Save(string fileName, Rect bounds)
     {
-        var placement = new MeterWindowPlacement(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+        var placement = new WindowPlacement(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
         if (!placement.IsValid()) return;
 
-        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-        var temporaryPath = SettingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var settingsPath = SettingsPath(fileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        var temporaryPath = settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(placement));
-            File.Move(temporaryPath, SettingsPath, overwrite: true);
+            File.Move(temporaryPath, settingsPath, overwrite: true);
         }
         finally
         {
@@ -47,7 +49,7 @@ internal sealed record MeterWindowPlacement(double Left, double Top, double Widt
         double.IsFinite(Width) && double.IsFinite(Height) &&
         Width >= 300 && Height >= 170 && Width <= 10000 && Height <= 10000;
 
-    private MeterWindowPlacement FitToDesktop()
+    private WindowPlacement FitToDesktop()
     {
         var desktop = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
             SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);

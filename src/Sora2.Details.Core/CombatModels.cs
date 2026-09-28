@@ -33,6 +33,18 @@ public sealed record CombatEvent(
     int? RawSourceContextFlags = null,
     int? RawTargetStatus7C = null);
 
+public sealed record DamageAmounts(int? Total, int? Effective, int? Overkill)
+{
+    public static DamageAmounts From(CombatEvent effect)
+    {
+        var total = effect.ResolvedAmount;
+        var effective = effect.EffectiveAmount;
+        var overkill = effect.Kind == CombatEventKind.Damage && total is >= 0 && effective is >= 0 &&
+            total >= effective ? total - effective : null;
+        return new DamageAmounts(total, effective, overkill);
+    }
+}
+
 public sealed record Encounter(
     string Id,
     string Label,
