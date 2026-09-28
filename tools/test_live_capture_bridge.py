@@ -108,6 +108,11 @@ def main():
         assert ambiguous.current["actors"][0]["name"] == "? Enemy 1 (ID 60050)"
         assert ambiguous.current["actors"][0]["nameProvenance"] == "unresolved"
         assert ambiguous.current["actors"][0]["nameLookupStatus"] == "ambiguous"
+        assert ambiguous.current["actors"][0]["nameLookupSignature"] == {
+            "level": 54, "exp": 301, "ep": 1000, "def": 361, "adf": 321, "mov": 6}
+        assert ambiguous.current["actors"][0]["nameLookupCandidates"] == [
+            {"unitId": "mon-synthetic", "name": "Synthetic Enemy"},
+            {"unitId": "mon-synthetic", "name": "Another Enemy"}]
         assert any("ambiguous" in issue for issue in ambiguous.current["issues"])
         hit_status = LiveBridge(root / "hit_status", "synthetic.jsonl", table_rows=[enemy_row])
         hit_status.handle({"at": at, "kind": "hit", "name": "BattleInit"})
@@ -132,6 +137,24 @@ def main():
         no_match.actor("0x22", 60050)
         assert no_match.current["actors"][0]["name"] == "? Enemy 1 (ID 60050)"
         assert no_match.current["actors"][0]["nameLookupStatus"] == "missing"
+        assert no_match.current["actors"][0]["nameLookupCandidates"] == []
+        interleaved = LiveBridge(root / "interleaved", "interleaved.jsonl")
+        interleaved.start({"at": at})
+        interleaved.handle({"at": at, "kind": "hit", "name": "AttackEffectCall", "tid": 1,
+                            "source_status_ptr": "0x11", "source_actor_id": 5,
+                            "target_status_ptr": "0x22", "target_actor_id": 60050,
+                            "candidate_resolved_amount": 10})
+        interleaved.handle({"at": at, "kind": "hit", "name": "HpSet", "tid": 1,
+                            "status_ptr": "0x11", "status_actor_id": 5,
+                            "hp_before": 20, "hp_max": 30, "requested_hp": 25})
+        assert 1 in interleaved.pending
+        interleaved.handle({"at": at, "kind": "hit", "name": "HpSet", "tid": 1,
+                            "status_ptr": "0x22", "status_actor_id": 60050,
+                            "hp_before": 20, "hp_max": 20, "requested_hp": 10})
+        assert [event["kind"] for event in interleaved.current["events"]] == ["Healing", "Damage"]
+        assert interleaved.current["events"][0]["sourceId"] is None
+        assert interleaved.current["events"][1]["sourceId"] == "status-11"
+        assert not interleaved.pending
         swapped = LiveBridge(root / "swapped", "synthetic.jsonl", name_rows=[
             {"characterId": 4, "name": "Kloe", "statusUnitKey": "chr5004p"}])
         swapped.start({"at": at})

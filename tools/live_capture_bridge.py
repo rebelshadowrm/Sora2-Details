@@ -197,7 +197,11 @@ class LiveBridge:
                        "nameLookupStatus": (self.enemy_lookup.get(pointer, {}).get("status", "unobserved")
                                             if team == "Enemy" else None),
                        "nameLookupCandidateCount": (self.enemy_lookup.get(pointer, {}).get("candidateCount")
-                                                    if team == "Enemy" else None)})
+                                                    if team == "Enemy" else None),
+                       "nameLookupSignature": (self.enemy_lookup.get(pointer, {}).get("signature")
+                                               if team == "Enemy" else None),
+                       "nameLookupCandidates": (self.enemy_lookup.get(pointer, {}).get("candidates")
+                                                if team == "Enemy" else None)})
         return key
 
     def observe_enemy_status(self, pointer, raw, expected_id):
@@ -211,7 +215,7 @@ class LiveBridge:
             if expected_id is not None and numeric_id != expected_id:
                 self.issue(f"Enemy lookup ID mismatch: observed {numeric_id}, context {expected_id}.")
                 return False
-            _, candidates = match_status(status_bytes, self.table_rows)
+            signature, candidates = match_status(status_bytes, self.table_rows)
         except (TypeError, ValueError):
             self.issue("An enemy status snapshot could not be decoded for lookup.")
             return False
@@ -238,7 +242,13 @@ class LiveBridge:
                 status = "matched-earlier"
             else:
                 self.issue(f"Enemy lookup {status} for ID {numeric_id} ({len(candidates)} candidate rows).")
-        self.enemy_lookup[pointer] = {"status": status, "candidateCount": len(candidates)}
+        candidate_labels = [{"unitId": row["unitId"], "name": row["name"]}
+                            for row in candidates]
+        signature_fields = dict(zip(("level", "exp", "ep", "def", "adf", "mov"),
+                                    signature))
+        self.enemy_lookup[pointer] = {"status": status, "candidateCount": len(candidates),
+                                      "signature": signature_fields,
+                                      "candidates": candidate_labels}
         key = self.actor_key(pointer)
         changed = False
         for actor_index, actor in enumerate(self.current["actors"]):
@@ -252,7 +262,9 @@ class LiveBridge:
                                          if match else "unresolved"),
                       "lookupUnitId": match["unitId"] if match else None,
                       "nameLookupStatus": status,
-                      "nameLookupCandidateCount": len(candidates)}
+                      "nameLookupCandidateCount": len(candidates),
+                      "nameLookupSignature": signature_fields,
+                      "nameLookupCandidates": candidate_labels}
             for field, value in fields.items():
                 if actor.get(field) != value:
                     actor[field] = value
@@ -425,8 +437,9 @@ class LiveBridge:
             return
         after = max(0, min(maximum, requested))
         target = self.actor(pointer, record.get("status_actor_id"))
-        attack = self.pending.pop(record.get("tid"), None)
+        attack = self.pending.get(record.get("tid"))
         if attack is not None and attack.get("target_status_ptr") == pointer and after <= before:
+            self.pending.pop(record.get("tid"), None)
             source = self.actor(attack.get("source_status_ptr"), attack.get("source_actor_id"))
             amount = attack.get("candidate_resolved_amount")
             if not isinstance(amount, int) or amount < 0 or requested >= 0 and amount != before - requested:
@@ -448,7 +461,7 @@ class LiveBridge:
                             raw_target_status_7c=target_status_7c(attack))
             return
         if attack is not None:
-            self.issue("Attack call did not pair with the next HP write on its thread.")
+            self.issue("An unrelated HP write occurred while an attack result was pending; the attack remains pending.")
         self.issue("An HP write had no verified source or move.")
         kind = "Healing" if after > before else "HpLoss" if after < before else "Unknown"
         amount = abs(after - before) if kind != "Unknown" else None

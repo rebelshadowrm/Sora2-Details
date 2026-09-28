@@ -329,11 +329,22 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                               rsi=hex(ctx.rsi), r12=hex(ctx.r12),
                                               r14=hex(ctx.r14), rdi=hex(ctx.rdi))
                                 if name in hp_set_names:
+                                    # Preserve bounded frame evidence for later heal-path
+                                    # research. This hook is inside the setter, so neither
+                                    # stack address is yet a verified action/source link.
+                                    hp_stack = read_bytes(ctx.rsp, 64)
+                                    frame_return = read_u64(ctx.rbp + 8)
                                     fields.update(status_ptr=hex(ctx.rsi),
                                                   status_actor_id=read_i32(ctx.rsi),
                                                   hp_before=read_i32(ctx.rsi + 0xC),
                                                   hp_max=read_i32(ctx.rsi + 0x10),
-                                                  requested_hp=ct.c_int32(ctx.r14 & 0xFFFFFFFF).value)
+                                                  requested_hp=ct.c_int32(ctx.r14 & 0xFFFFFFFF).value,
+                                                  hp_rsp=hex(ctx.rsp),
+                                                  hp_rbp=hex(ctx.rbp),
+                                                  hp_stack_64=(hp_stack.hex()
+                                                               if hp_stack is not None else None),
+                                                  hp_frame_return_candidate=(hex(frame_return)
+                                                                             if frame_return is not None else None))
                                 if name in critical_popup_names:
                                     # Command-battle caller at RVA 0x116EE0 passes a
                                     # stack popup object in RDX. Its +0x78 enum is
