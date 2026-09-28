@@ -181,7 +181,8 @@ public partial class MainWindow
             stream.ReadExactly(buffer);
             var tail = Encoding.UTF8.GetString(buffer);
             return tail.Contains("\"kind\": \"detached\"", StringComparison.Ordinal)
-                || tail.Contains("\"kind\": \"detached_after_error\"", StringComparison.Ordinal);
+                || tail.Contains("\"kind\": \"detached_after_error\"", StringComparison.Ordinal)
+                || tail.Contains("\"kind\": \"target_exited\"", StringComparison.Ordinal);
         }
         catch (IOException) { return false; }
     }

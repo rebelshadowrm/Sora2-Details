@@ -1,4 +1,4 @@
-# Sora 2 Details 0.2.0 preview
+# Sora 2 Details 0.2.0 preview 2
 
 This Windows preview provides a compact meter and durable **partial** command-battle combat log. It records observed HP changes and some attributed damaging hits; support actions, misses, some move names, and critical status remain incomplete. It is not yet a complete combat log.
 
@@ -7,6 +7,8 @@ Install once from `Sora2.Details-win-x64-preview-Setup.exe`, then open Sora 2 De
 Start the supported game, open the meter, then click **●** to start a 12-hour read-only command-battle capture. Approve the Windows administrator prompt. Click **■** to detach early. Start capture before entering a command battle. The meter displays saved encounters when the game is closed.
 
 The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them.
+
+Preview 2 also recognizes a game-exit trace as a completed capture, so it does not wait for a detach record when the game has already closed.
 
 The meter stays on top of the game. Clicking it gives it keyboard focus; click the game to return control. Its startup no longer activates the window over the game. If game input behaves unexpectedly, use Stop and wait for the probe to detach before continuing.
 

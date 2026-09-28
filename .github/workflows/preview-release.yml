@@ -18,6 +18,15 @@ jobs:
           dotnet-version: 9.0.x
       - name: Restore pinned Velopack CLI
         run: dotnet tool restore
+      - name: Fetch previous preview for a delta update
+        shell: pwsh
+        env:
+          VPK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet vpk download github `
+            --repoUrl "https://github.com/$env:GITHUB_REPOSITORY" `
+            --channel win-x64-preview --pre `
+            --outputDir releases/velopack-preview
       - name: Build and test installer
         shell: pwsh
         run: |
