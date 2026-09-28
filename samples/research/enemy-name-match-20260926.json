@@ -1,0 +1,34 @@
+[
+  {
+    "statusPtr": "0x16c26d8bff0",
+    "runtimeStatusId": 60052,
+    "signature": {
+      "level": 54,
+      "exp": 301,
+      "ep": 1000,
+      "def": 361,
+      "adf": 321,
+      "mov": 6
+    },
+    "unitId": "mon5003",
+    "name": "Lily Mover",
+    "candidateCount": 1,
+    "provenance": "unique-stat-signature/exact-English-table"
+  },
+  {
+    "statusPtr": "0x16c26163730",
+    "runtimeStatusId": 60050,
+    "signature": {
+      "level": 55,
+      "exp": 923,
+      "ep": 3000,
+      "def": 921,
+      "adf": 272,
+      "mov": 7
+    },
+    "unitId": "mon5014_c02",
+    "name": "Emeronecider",
+    "candidateCount": 1,
+    "provenance": "unique-stat-signature/exact-English-table"
+  }
+]

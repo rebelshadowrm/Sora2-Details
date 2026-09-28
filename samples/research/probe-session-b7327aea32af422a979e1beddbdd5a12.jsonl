@@ -1,0 +1,11 @@
+{"at": "2026-09-27T10:03:21.003-05:00", "kind": "executable", "path": "C:\\Games\\Trails in the Sky 2nd Chapter\\sora_2nd.exe", "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"}
+{"at": "2026-09-27T10:03:21.005-05:00", "kind": "attached", "pid": 27872}
+{"at": "2026-09-27T10:03:21.005-05:00", "kind": "module", "base": "0x7ff7a8630000", "breakpoints": {"BattleTurnBegin": "0x7ff7a87472c4", "BattleCommandBegin": "0x7ff7a87475b8", "BattleTurnEnd": "0x7ff7a87484d4", "AttackEffectCall": "0x7ff7a8713e55"}}
+{"at": "2026-09-27T10:03:21.024-05:00", "kind": "armed", "threads": 45}
+{"at": "2026-09-27T10:04:18.479-05:00", "kind": "hit", "name": "BattleTurnEnd", "tid": 30872, "rip": "0x7ff7a87484d4", "rva": "0x1184d4", "rcx": "0x198c04961b0", "rdx": "0xf8", "r8": "0x7ff7a911ca80", "r9": "0x198c645b050", "rsi": "0x0", "r12": "0x7ff7a928d9e8", "r14": "0x7ffffff8", "rdi": "0x198bd850340"}
+{"at": "2026-09-27T10:04:18.488-05:00", "kind": "hit", "name": "BattleTurnBegin", "tid": 30872, "rip": "0x7ff7a87472c4", "rva": "0x1172c4", "rcx": "0x0", "rdx": "0xf8", "r8": "0x7ff7a911ca20", "r9": "0x198c645b050", "rsi": "0x0", "r12": "0x7ff7a928d9e8", "r14": "0x7ffffff8", "rdi": "0x198bd850340"}
+{"at": "2026-09-27T10:04:20.009-05:00", "kind": "hit", "name": "BattleTurnEnd", "tid": 30872, "rip": "0x7ff7a87484d4", "rva": "0x1184d4", "rcx": "0x198c04961b0", "rdx": "0xf8", "r8": "0x7ff7a911ca80", "r9": "0x198c645b050", "rsi": "0x0", "r12": "0x7ff7a928d9e8", "r14": "0x7ffffff8", "rdi": "0x198bd850340"}
+{"at": "2026-09-27T10:04:20.021-05:00", "kind": "hit", "name": "BattleTurnBegin", "tid": 30872, "rip": "0x7ff7a87472c4", "rva": "0x1172c4", "rcx": "0x0", "rdx": "0xf8", "r8": "0x7ff7a911ca20", "r9": "0x198c2f346d0", "rsi": "0x0", "r12": "0x7ff7a928d9e8", "r14": "0x7ffffff8", "rdi": "0x198bd850340"}
+{"at": "2026-09-27T10:04:20.055-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 30872, "rip": "0x7ff7a87475b8", "rva": "0x1175b8", "rcx": "0x198cd9c3750", "rdx": "0x198bebcb120", "r8": "0x6", "r9": "0x198c2f2cf10", "rsi": "0x0", "r12": "0x7ff7a928d9e8", "r14": "0x7ffffff8", "rdi": "0x198c04961b0"}
+{"at": "2026-09-27T10:06:21.079-05:00", "kind": "disarmed"}
+{"at": "2026-09-27T10:06:21.402-05:00", "kind": "detached"}

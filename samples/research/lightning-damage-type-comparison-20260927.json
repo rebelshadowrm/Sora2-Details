@@ -1,0 +1,17 @@
+{
+  "executableSha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF",
+  "rawTrace": ".research-deps/live/probe-session-72e37aebefff4f6489e56d902593422b.jsonl",
+  "observationAt": "2026-09-27T15:33:11.365-05:00",
+  "sourceRuntimeStatusId": 0,
+  "sourceName": "Estelle",
+  "moveName": "Lightning",
+  "moveProvenance": "player-reported Art immediately after use; live move ID not captured",
+  "staticTablePackedId": "0xffff0099",
+  "staticTableSkillId": 153,
+  "result": {
+    "targetRuntimeStatusId": 60012,
+    "candidateResolvedAmount": 10645,
+    "rawResultFlags": "0x52000"
+  },
+  "comparison": "Estelle's player-reported Arts-damage Craft True Comet and non-Art Craft Shatter Break each also produced 0x52000. This result flag does not distinguish an Art from either Craft or determine damage class. Distinct result-frame bytes are unverified leads, not decoded fields."
+}

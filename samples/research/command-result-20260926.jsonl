@@ -1,0 +1,59 @@
+﻿{"at": "2026-09-26T21:25:10.430-05:00", "kind": "executable", "path": "C:\\Games\\Trails in the Sky 2nd Chapter\\sora_2nd.exe", "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"}
+{"at": "2026-09-26T21:25:10.436-05:00", "kind": "attached", "pid": 25876}
+{"at": "2026-09-26T21:25:10.436-05:00", "kind": "module", "base": "0x7ff6807d0000", "breakpoints": {"BattleCommandBegin": "0x7ff6808e75b8", "EffectHelper": "0x7ff6808b4530", "BattleEnd": "0x7ff68088a659", "AgateHp": "0x16c50ee5594"}}
+{"at": "2026-09-26T21:25:10.437-05:00", "kind": "write_baseline", "values": {"AgateHp": 5105}}
+{"at": "2026-09-26T21:25:10.444-05:00", "kind": "armed", "threads": 42}
+{"at": "2026-09-26T21:25:46.340-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.352-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.365-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.377-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.389-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.402-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.413-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.426-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.439-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.450-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.462-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.475-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.486-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.498-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.511-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:46.522-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:25:47.679-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808cbf9c", "rva": "0xfbf9c", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 5105, "after": 5105, "rsp": "0x46bb0fe378"}
+{"at": "2026-09-26T21:26:34.110-05:00", "kind": "hit", "name": "EffectHelper", "tid": 9356, "rip": "0x7ff6808b4530", "rva": "0xe4530", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:26:34.110-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808c8ec7", "rva": "0xf8ec7", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 5105, "after": 6441, "rsp": "0x46bb0fee50"}
+{"at": "2026-09-26T21:26:34.121-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:26:35.403-05:00", "kind": "hit", "name": "EffectHelper", "tid": 9356, "rip": "0x7ff6808b4530", "rva": "0xe4530", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:26:35.415-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:26:36.375-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808c8ec7", "rva": "0xf8ec7", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 6441, "after": 6378, "rsp": "0x46bb0fbc50"}
+{"at": "2026-09-26T21:26:37.555-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:28:57.121-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808c8ec7", "rva": "0xf8ec7", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 6378, "after": 6682, "rsp": "0x46bb0fb230"}
+{"at": "2026-09-26T21:28:57.578-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:01.819-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:02.495-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808c8ec7", "rva": "0xf8ec7", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 6682, "after": 6174, "rsp": "0x46bb0fbc50"}
+{"at": "2026-09-26T21:29:03.508-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:04.125-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808c8ec7", "rva": "0xf8ec7", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 6174, "after": 5337, "rsp": "0x46bb0fbc50"}
+{"at": "2026-09-26T21:29:05.442-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:11.504-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:19.175-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:25.445-05:00", "kind": "hit", "name": "BattleCommandBegin", "tid": 9356, "rip": "0x7ff6808e75b8", "rva": "0x1175b8", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.745-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.758-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.770-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.781-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.794-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.806-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.817-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.830-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.842-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.855-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.866-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.878-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.890-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.903-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.915-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.927-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:34.939-05:00", "kind": "hit", "name": "BattleEnd", "tid": 9356, "rip": "0x7ff68088a659", "rva": "0xba659", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0"}
+{"at": "2026-09-26T21:29:36.104-05:00", "kind": "hit", "name": "AgateHp", "tid": 9356, "rip": "0x7ff6808cbf9c", "rva": "0xfbf9c", "rcx": "0x0", "rdx": "0x0", "r8": "0x0", "r9": "0x0", "address": "0x16c50ee5594", "before": 5337, "after": 5337, "rsp": "0x46bb0fe378"}
+{"at": "2026-09-26T21:30:10.454-05:00", "kind": "disarmed"}
+{"at": "2026-09-26T21:30:10.779-05:00", "kind": "detached"}

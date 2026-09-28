@@ -1,0 +1,65 @@
+[
+  {
+    "id": "sample-001",
+    "label": "Training fight · 10:00 · Victory",
+    "startedAt": "2026-09-25T10:00:00-05:00",
+    "outcome": "Victory",
+    "isComplete": true,
+    "actors": [
+      { "id": "estelle", "name": "Estelle", "team": "Party" },
+      { "id": "joshua", "name": "Joshua", "team": "Party" },
+      { "id": "wolf-1", "name": "Wolf A", "team": "Enemy" },
+      { "id": "wolf-2", "name": "Wolf B", "team": "Enemy" }
+    ],
+    "events": [
+      { "sequence": 1, "observedAt": "2026-09-25T10:00:01-05:00", "actionId": "a1", "sourceId": "estelle", "targetId": "wolf-1", "moveId": "attack", "moveName": "Attack", "kind": "Damage", "effectiveAmount": 100, "hpBefore": 300, "hpAfter": 200, "damageClass": "Physical" },
+      { "sequence": 2, "observedAt": "2026-09-25T10:00:02-05:00", "actionId": "a2", "sourceId": "joshua", "targetId": "wolf-2", "moveId": "art-1", "moveName": "Sample Art", "kind": "Damage", "effectiveAmount": 80, "hpBefore": 250, "hpAfter": 170, "damageClass": "Arts" },
+      { "sequence": 3, "observedAt": "2026-09-25T10:00:03-05:00", "actionId": "a3", "sourceId": "wolf-1", "targetId": "estelle", "moveId": "bite", "moveName": "Bite", "kind": "Damage", "effectiveAmount": 60, "hpBefore": 200, "hpAfter": 140, "damageClass": "Physical" },
+      { "sequence": 4, "observedAt": "2026-09-25T10:00:04-05:00", "actionId": "a4", "sourceId": "wolf-2", "targetId": "joshua", "moveId": "bolt", "moveName": "Sample Bolt", "kind": "Damage", "effectiveAmount": 80, "hpBefore": 80, "hpAfter": 0, "damageClass": "Arts" },
+      { "sequence": 5, "observedAt": "2026-09-25T10:00:04-05:00", "actionId": "a4", "sourceId": "wolf-2", "targetId": "joshua", "moveId": "bolt", "moveName": "Sample Bolt", "kind": "Knockout", "effectiveAmount": null, "hpBefore": 0, "hpAfter": 0, "damageClass": "Arts" },
+      { "sequence": 6, "observedAt": "2026-09-25T10:00:05-05:00", "actionId": "a5", "sourceId": "estelle", "targetId": "joshua", "moveId": "revive", "moveName": "Sample Revival", "kind": "Revival", "effectiveAmount": null, "hpBefore": 0, "hpAfter": 0, "damageClass": "Unknown" },
+      { "sequence": 7, "observedAt": "2026-09-25T10:00:05-05:00", "actionId": "a5", "sourceId": "estelle", "targetId": "joshua", "moveId": "revive", "moveName": "Sample Revival", "kind": "Healing", "effectiveAmount": 70, "hpBefore": 0, "hpAfter": 70, "damageClass": "Unknown" },
+      { "sequence": 8, "observedAt": "2026-09-25T10:00:06-05:00", "actionId": "a6", "sourceId": "joshua", "targetId": "wolf-1", "moveId": "craft-1", "moveName": "Sample Craft", "kind": "Damage", "effectiveAmount": 120, "hpBefore": 200, "hpAfter": 80, "damageClass": "Physical" },
+      { "sequence": 9, "observedAt": "2026-09-25T10:00:07-05:00", "actionId": "a7", "sourceId": "estelle", "targetId": "wolf-1", "moveId": "attack", "moveName": "Attack", "kind": "Damage", "effectiveAmount": 80, "hpBefore": 80, "hpAfter": 0, "damageClass": "Physical" }
+    ]
+  },
+  {
+    "id": "sample-002",
+    "label": "Roadside fight · 10:12 · Victory",
+    "startedAt": "2026-09-25T10:12:00-05:00",
+    "outcome": "Victory",
+    "isComplete": true,
+    "actors": [
+      { "id": "estelle", "name": "Estelle", "team": "Party" },
+      { "id": "plant-1", "name": "Plant", "team": "Enemy" }
+    ],
+    "events": [
+      { "sequence": 1, "observedAt": "2026-09-25T10:12:01-05:00", "actionId": "b1", "sourceId": "estelle", "targetId": "plant-1", "moveId": "attack", "moveName": "Attack", "kind": "Damage", "effectiveAmount": 40, "hpBefore": 40, "hpAfter": 0, "damageClass": "Physical" }
+    ]
+  },
+  {
+    "id": "sample-003",
+    "label": "Showcase fight · 10:20 · Victory",
+    "startedAt": "2026-09-25T10:20:00-05:00",
+    "outcome": "Victory",
+    "isComplete": true,
+    "actors": [
+      { "id": "estelle", "name": "Estelle", "team": "Party" },
+      { "id": "joshua", "name": "Joshua", "team": "Party" },
+      { "id": "kloe", "name": "Kloe", "team": "Party" },
+      { "id": "agate", "name": "Agate", "team": "Party" },
+      { "id": "robot-1", "name": "Sentry A", "team": "Enemy" },
+      { "id": "robot-2", "name": "Sentry B", "team": "Enemy" }
+    ],
+    "events": [
+      { "sequence": 1, "observedAt": "2026-09-25T10:20:01-05:00", "actionId": "c1", "sourceId": "estelle", "targetId": "robot-1", "moveId": "attack", "moveName": "Attack", "kind": "Damage", "effectiveAmount": 180, "hpBefore": 450, "hpAfter": 270, "damageClass": "Physical" },
+      { "sequence": 2, "observedAt": "2026-09-25T10:20:02-05:00", "actionId": "c2", "sourceId": "joshua", "targetId": "robot-2", "moveId": "craft-2", "moveName": "Sample Craft", "kind": "Damage", "effectiveAmount": 150, "hpBefore": 390, "hpAfter": 240, "damageClass": "Physical" },
+      { "sequence": 3, "observedAt": "2026-09-25T10:20:03-05:00", "actionId": "c3", "sourceId": "robot-1", "targetId": "estelle", "moveId": "slash", "moveName": "Heavy Slash", "kind": "Damage", "effectiveAmount": 85, "hpBefore": 220, "hpAfter": 135, "damageClass": "Physical" },
+      { "sequence": 4, "observedAt": "2026-09-25T10:20:04-05:00", "actionId": "c4", "sourceId": "kloe", "targetId": "robot-1", "moveId": "art-2", "moveName": "Sample Art", "kind": "Damage", "effectiveAmount": 120, "hpBefore": 270, "hpAfter": 150, "damageClass": "Arts" },
+      { "sequence": 5, "observedAt": "2026-09-25T10:20:05-05:00", "actionId": "c5", "sourceId": "agate", "targetId": "robot-2", "moveId": "attack", "moveName": "Attack", "kind": "Damage", "effectiveAmount": 90, "hpBefore": 240, "hpAfter": 150, "damageClass": "Physical" },
+      { "sequence": 6, "observedAt": "2026-09-25T10:20:06-05:00", "actionId": "c6", "sourceId": "robot-2", "targetId": "joshua", "moveId": "burst", "moveName": "Sample Burst", "kind": "Damage", "effectiveAmount": 110, "hpBefore": 90, "hpAfter": 0, "damageClass": "Arts" },
+      { "sequence": 7, "observedAt": "2026-09-25T10:20:06-05:00", "actionId": "c6", "sourceId": "robot-2", "targetId": "joshua", "moveId": "burst", "moveName": "Sample Burst", "kind": "Knockout", "effectiveAmount": null, "hpBefore": 0, "hpAfter": 0, "damageClass": "Arts" },
+      { "sequence": 8, "observedAt": "2026-09-25T10:20:07-05:00", "actionId": "c7", "sourceId": "kloe", "targetId": "estelle", "moveId": "heal", "moveName": "Sample Heal", "kind": "Healing", "effectiveAmount": 65, "hpBefore": 135, "hpAfter": 200, "damageClass": "Unknown" }
+    ]
+  }
+]

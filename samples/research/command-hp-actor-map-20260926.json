@@ -1,0 +1,7 @@
+{
+  "0x16c233f96b0": { "id": "enemy-1", "name": "Enemy 1 (28,840 max HP)", "team": "Enemy" },
+  "0x16c23513530": { "id": "enemy-2", "name": "Enemy 2 (28,840 max HP)", "team": "Enemy" },
+  "0x16c50ee5588": { "id": "party-agate", "name": "Agate", "team": "Party" },
+  "0x16c50ee52e8": { "id": "party-tita", "name": "Tita", "team": "Party" },
+  "0x16c50ee4b08": { "id": "party-scherazard", "name": "Scherazard", "team": "Party" }
+}

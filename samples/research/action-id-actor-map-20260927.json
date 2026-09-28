@@ -1,0 +1,8 @@
+{
+  "0x1990e305588": { "id": "party-agate", "name": "Agate", "team": "Party" },
+  "0x1990e3052e8": { "id": "party-tita", "name": "Tita", "team": "Party" },
+  "0x1990e304b08": { "id": "party-scherazard", "name": "Scherazard", "team": "Party" },
+  "0x1990e3045c8": { "id": "party-estelle", "name": "Estelle", "team": "Party" },
+  "0x198c9415030": { "id": "enemy-1", "name": "Enemy 1 (38,825 max HP)", "team": "Enemy" },
+  "0x198c92a2430": { "id": "enemy-2", "name": "Enemy 2 (38,825 max HP)", "team": "Enemy" }
+}

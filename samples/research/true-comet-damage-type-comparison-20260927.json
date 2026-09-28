@@ -1,0 +1,32 @@
+{
+  "executableSha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF",
+  "rawTrace": ".research-deps/live/probe-session-72e37aebefff4f6489e56d902593422b.jsonl",
+  "observationAt": "2026-09-27T15:28:10.639-05:00",
+  "sourceRuntimeStatusId": 0,
+  "sourceName": "Estelle",
+  "moveName": "True Comet",
+  "moveProvenance": "player-reported Arts-damage Craft hitting several targets; live move ID not captured",
+  "staticTablePackedId": "0x000007d7",
+  "staticTableSkillId": 2007,
+  "results": [
+    {
+      "at": "2026-09-27T15:28:10.639-05:00",
+      "targetRuntimeStatusId": 60013,
+      "candidateResolvedAmount": 8779,
+      "rawResultFlags": "0x52000"
+    },
+    {
+      "at": "2026-09-27T15:28:10.640-05:00",
+      "targetRuntimeStatusId": 60012,
+      "candidateResolvedAmount": 8019,
+      "rawResultFlags": "0x52000"
+    },
+    {
+      "at": "2026-09-27T15:28:10.641-05:00",
+      "targetRuntimeStatusId": 60014,
+      "candidateResolvedAmount": 8620,
+      "rawResultFlags": "0x52000"
+    }
+  ],
+  "comparison": "Estelle's player-reported non-Art Shatter Break hit at 15:23:05.605 also had raw flag 0x52000. The two move IDs were found in the static table, but neither was present as a two- or four-byte integer in the captured source/target context or result-frame buffers. The raw flag does not identify damage class or move."
+}

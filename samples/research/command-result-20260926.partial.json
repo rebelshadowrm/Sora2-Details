@@ -1,0 +1,85 @@
+[
+  {
+    "id": "research-20260926-agate-hp",
+    "label": "Agate HP only - Victory (partial)",
+    "startedAt": "2026-09-26T21:26:34.121000-05:00",
+    "outcome": "Victory",
+    "isComplete": false,
+    "actors": [
+      {
+        "id": "observed-agate",
+        "name": "Agate",
+        "team": "Party"
+      }
+    ],
+    "events": [
+      {
+        "sequence": 1,
+        "observedAt": "2026-09-26T21:26:36.375-05:00",
+        "actionId": null,
+        "sourceId": null,
+        "targetId": "observed-agate",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 63,
+        "hpBefore": 6441,
+        "hpAfter": 6378,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 2,
+        "observedAt": "2026-09-26T21:28:57.121-05:00",
+        "actionId": null,
+        "sourceId": null,
+        "targetId": "observed-agate",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Healing",
+        "effectiveAmount": 304,
+        "hpBefore": 6378,
+        "hpAfter": 6682,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 3,
+        "observedAt": "2026-09-26T21:29:02.495-05:00",
+        "actionId": null,
+        "sourceId": null,
+        "targetId": "observed-agate",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 508,
+        "hpBefore": 6682,
+        "hpAfter": 6174,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 4,
+        "observedAt": "2026-09-26T21:29:04.125-05:00",
+        "actionId": null,
+        "sourceId": null,
+        "targetId": "observed-agate",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 837,
+        "hpBefore": 6174,
+        "hpAfter": 5337,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      }
+    ],
+    "issues": [
+      "Research replay: only Agate's HP was watched; enemy HP and other party HP were not captured.",
+      "Encounter start was not observed; the interval starts at a command callback.",
+      "Victory was reported by the player; the probe observed an end callback, not an outcome value.",
+      "Sources, moves, damage classes and displayed amounts were not observed.",
+      "One HP write may combine multiple visible hits; each row is an HP change, not a proven action."
+    ]
+  }
+]

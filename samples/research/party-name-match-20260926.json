@@ -1,0 +1,42 @@
+[
+  {
+    "statusPtr": "0x16c50ee5588",
+    "statusId": 5,
+    "level": 61,
+    "hp": 6003,
+    "maxHp": 6682,
+    "unitId": "chr0005p",
+    "name": "Agate",
+    "provenance": "verified-party-status-id + exact-English-t_name/t_status"
+  },
+  {
+    "statusPtr": "0x16c50ee45c8",
+    "statusId": 0,
+    "level": 61,
+    "hp": 5267,
+    "maxHp": 5859,
+    "unitId": "chr5000p",
+    "name": "Estelle",
+    "provenance": "verified-party-status-id + exact-English-t_name/t_status"
+  },
+  {
+    "statusPtr": "0x16c50ee4b08",
+    "statusId": 2,
+    "level": 61,
+    "hp": 5802,
+    "maxHp": 5973,
+    "unitId": "chr5002p",
+    "name": "Scherazard",
+    "provenance": "verified-party-status-id + exact-English-t_name/t_status"
+  },
+  {
+    "statusPtr": "0x16c50ee52e8",
+    "statusId": 6,
+    "level": 61,
+    "hp": 6754,
+    "maxHp": 6904,
+    "unitId": "chr5006p",
+    "name": "Tita",
+    "provenance": "verified-party-status-id + exact-English-t_name/t_status"
+  }
+]

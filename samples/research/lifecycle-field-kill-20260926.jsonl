@@ -1,0 +1,6 @@
+﻿{"at": "2026-09-26T21:06:09.116-05:00", "kind": "executable", "path": "C:\\Games\\Trails in the Sky 2nd Chapter\\sora_2nd.exe", "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"}
+{"at": "2026-09-26T21:06:09.119-05:00", "kind": "attached", "pid": 25876}
+{"at": "2026-09-26T21:06:09.119-05:00", "kind": "module", "base": "0x7ff6807d0000", "breakpoints": {"BattleStart": "0x7ff680888410", "BattlePreEnd": "0x7ff68088a405", "BattleEnd": "0x7ff68088a659", "BattleDead": "0x7ff68088ce10"}}
+{"at": "2026-09-26T21:06:09.123-05:00", "kind": "armed", "threads": 42}
+{"at": "2026-09-26T21:09:09.193-05:00", "kind": "disarmed"}
+{"at": "2026-09-26T21:09:09.519-05:00", "kind": "detached"}

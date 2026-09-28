@@ -1,0 +1,27 @@
+{
+  "executableSha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF",
+  "rawTrace": ".research-deps/live/probe-session-72e37aebefff4f6489e56d902593422b.jsonl",
+  "encounterStartedAt": "2026-09-27T15:22:53.181-05:00",
+  "observationAt": "2026-09-27T15:23:05.605-05:00",
+  "sourceRuntimeStatusId": 0,
+  "sourceName": "Estelle",
+  "moveName": "Shatter Break",
+  "playerReportedAoe": true,
+  "moveProvenance": "player-reported after the fight; live move ID not captured",
+  "playerReportedNoArtsUsed": true,
+  "results": [
+    {
+      "targetRuntimeStatusId": 60006,
+      "candidateResolvedAmount": 25672,
+      "effectiveAmount": 8808,
+      "rawResultFlags": "0x52000"
+    },
+    {
+      "targetRuntimeStatusId": 60007,
+      "candidateResolvedAmount": 29283,
+      "effectiveAmount": 14529,
+      "rawResultFlags": "0x52002"
+    }
+  ],
+  "conclusion": "0x52000 is shared by confirmed Arts and a player-reported non-Art Craft; it cannot independently classify a result as Arts. The second flag differs between two targets of the same reported move."
+}

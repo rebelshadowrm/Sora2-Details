@@ -1,0 +1,246 @@
+[
+  {
+    "id": "research-20260926-attributed-attack",
+    "label": "Attributed attack path - Victory (partial)",
+    "startedAt": "2026-09-26T21:50:49.737000-05:00",
+    "outcome": "Victory",
+    "isComplete": false,
+    "actors": [
+      {
+        "id": "party-agate",
+        "name": "Agate",
+        "team": "Party"
+      },
+      {
+        "id": "party-estelle",
+        "name": "Estelle",
+        "team": "Party"
+      },
+      {
+        "id": "party-scherazard",
+        "name": "Scherazard",
+        "team": "Party"
+      },
+      {
+        "id": "party-tita",
+        "name": "Tita",
+        "team": "Party"
+      },
+      {
+        "id": "enemy-1",
+        "name": "Enemy 1 (28,840 max HP)",
+        "team": "Enemy"
+      },
+      {
+        "id": "enemy-2",
+        "name": "Enemy 2 (31,046 max HP)",
+        "team": "Enemy"
+      }
+    ],
+    "events": [
+      {
+        "sequence": 1,
+        "observedAt": "2026-09-26T21:52:10.488-05:00",
+        "actionId": null,
+        "sourceId": "party-agate",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": "Normal Attack (player-reported)",
+        "kind": "Damage",
+        "effectiveAmount": 10452,
+        "hpBefore": 28840,
+        "hpAfter": 18388,
+        "damageClass": "Unknown",
+        "resolvedAmount": 10452
+      },
+      {
+        "sequence": 2,
+        "observedAt": "2026-09-26T21:52:44.356-05:00",
+        "actionId": null,
+        "sourceId": "party-estelle",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 7980,
+        "hpBefore": 18388,
+        "hpAfter": 10408,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 3,
+        "observedAt": "2026-09-26T21:52:44.357-05:00",
+        "actionId": null,
+        "sourceId": "party-estelle",
+        "targetId": "enemy-2",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 10145,
+        "hpBefore": 31046,
+        "hpAfter": 20901,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 4,
+        "observedAt": "2026-09-26T21:52:46.245-05:00",
+        "actionId": null,
+        "sourceId": "party-estelle",
+        "targetId": "enemy-2",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 6028,
+        "hpBefore": 20901,
+        "hpAfter": 14873,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 5,
+        "observedAt": "2026-09-26T21:52:46.246-05:00",
+        "actionId": null,
+        "sourceId": "party-estelle",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 5893,
+        "hpBefore": 10408,
+        "hpAfter": 4515,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 6,
+        "observedAt": "2026-09-26T21:52:46.430-05:00",
+        "actionId": null,
+        "sourceId": "party-scherazard",
+        "targetId": "enemy-2",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 2241,
+        "hpBefore": 14873,
+        "hpAfter": 12632,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 7,
+        "observedAt": "2026-09-26T21:52:46.431-05:00",
+        "actionId": null,
+        "sourceId": "party-scherazard",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 2750,
+        "hpBefore": 4515,
+        "hpAfter": 1765,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 8,
+        "observedAt": "2026-09-26T21:52:46.566-05:00",
+        "actionId": null,
+        "sourceId": "party-agate",
+        "targetId": "enemy-2",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 8067,
+        "hpBefore": 12632,
+        "hpAfter": 4565,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 9,
+        "observedAt": "2026-09-26T21:52:46.566-05:00",
+        "actionId": null,
+        "sourceId": "party-agate",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 1765,
+        "hpBefore": 1765,
+        "hpAfter": 0,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 10,
+        "observedAt": "2026-09-26T21:52:46.772-05:00",
+        "actionId": null,
+        "sourceId": "party-tita",
+        "targetId": "enemy-2",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 2076,
+        "hpBefore": 4565,
+        "hpAfter": 2489,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 11,
+        "observedAt": "2026-09-26T21:52:46.772-05:00",
+        "actionId": null,
+        "sourceId": "party-tita",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 0,
+        "hpBefore": 0,
+        "hpAfter": 0,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 12,
+        "observedAt": "2026-09-26T21:52:47.380-05:00",
+        "actionId": null,
+        "sourceId": "party-estelle",
+        "targetId": "enemy-2",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 2489,
+        "hpBefore": 2489,
+        "hpAfter": 0,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      },
+      {
+        "sequence": 13,
+        "observedAt": "2026-09-26T21:52:47.380-05:00",
+        "actionId": null,
+        "sourceId": "party-estelle",
+        "targetId": "enemy-1",
+        "moveId": null,
+        "moveName": null,
+        "kind": "Damage",
+        "effectiveAmount": 0,
+        "hpBefore": 0,
+        "hpAfter": 0,
+        "damageClass": "Unknown",
+        "resolvedAmount": null
+      }
+    ],
+    "issues": [
+      "Research replay: the command interval and victory were player-confirmed, not automatically bounded.",
+      "The source/target pointers and HP changes were paired only for one attack-result path; other effect paths are not covered.",
+      "Actor names/teams come from the player's roster and prior HP mapping; enemy names remain unknown.",
+      "Only the timed normal Attack has a player-reported move label; other moves and all damage classes are unknown.",
+      "Effective HP loss excludes overkill and repeated hits on an already-zero-HP target.",
+      "Earlier Escape/re-entry and any field effects are excluded from this selected interval."
+    ]
+  }
+]

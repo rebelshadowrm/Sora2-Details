@@ -1,0 +1,39 @@
+{
+  "description": "Player-confirmed same-actor, same-move, same-target critical control in one uninterrupted command battle",
+  "gameExecutableSha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF",
+  "rawTrace": ".research-deps/live/probe-session-17638501641643249332adca6347343b.jsonl",
+  "sourceActorId": 5,
+  "sourceName": "Agate",
+  "targetActorId": 60073,
+  "moveId": "0xFFFF0064",
+  "moveName": "Stone Hammer",
+  "reportedSequence": "critical, critical, non-critical kill",
+  "results": [
+    {
+      "at": "2026-09-27T21:25:13.028-05:00",
+      "resolvedAmount": 11564,
+      "playerReportedCritical": true,
+      "rawResultFlags": "0x52000",
+      "rawSourceContext30": 1,
+      "rawTargetStatus7C": 3
+    },
+    {
+      "at": "2026-09-27T21:25:26.624-05:00",
+      "resolvedAmount": 15147,
+      "playerReportedCritical": true,
+      "rawResultFlags": "0x52000",
+      "rawSourceContext30": 1,
+      "rawTargetStatus7C": 3
+    },
+    {
+      "at": "2026-09-27T21:25:38.950-05:00",
+      "resolvedAmount": 12428,
+      "playerReportedCritical": false,
+      "playerReportedLethal": true,
+      "rawResultFlags": "0x52000",
+      "rawSourceContext30": 1,
+      "rawTargetStatus7C": 3
+    }
+  ],
+  "conclusion": "Neither captured result flags, source context +0x30, nor target status +0x7C distinguishes the confirmed critical hits from the non-critical killing hit. IsCritical remains unknown in automatic logs."
+}
