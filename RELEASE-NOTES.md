@@ -1,16 +1,12 @@
-# Sora 2 Details 0.2.0 preview 8
+# Sora 2 Details 0.2.0 preview 9
 
 ## What changed in this preview
 
-- Closing the meter during capture now requests a clean probe detach before exit. If detachment cannot be confirmed, the meter warns and asks before exiting anyway.
-- The compact status shows Ready, Capturing, Stopping, or Error. Click it for the full message and installed version.
-- Recent and full history show each encounter's time, outcome, and PARTIAL status.
-- Display settings now persist position lock, opacity, always-on-top, text size, and a visible-row height preset. Find them under the meter title or by right-clicking the header.
-- A save reload or Retry that clears party status after a fight now returns the current meter to a waiting state. The previous attempt remains in history; the next verified command-battle entry starts a fresh meter.
-- The Walter defeat/retry trace showed the game restoring party HP directly without either battle boundary callback. The logger now splits that observed full-party wipe and direct reset into separate partial attempts, marking the defeat and retry entry as inferred.
-- The installer and Velopack portable build now bundle only the tools needed for normal capture. Research tools remain in the source checkout and legacy research ZIP.
+- Opacity now applies to the entire meter window, including its background and header.
+- Click-through mode passes mouse clicks to the game. Restore interaction by double-clicking the Sora 2 Details system-tray icon or choosing **Restore interaction and show meter** from its menu.
+- Removed the Visible rows setting; resize the meter directly to show more or fewer rows.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Install once, then use the meter's update button for later previews. `Sora2.Details-win-x64-preview-Portable.zip` is available if you prefer a portable build.
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 9 with the meter's update button.
 
 ## Using the preview
 
@@ -23,6 +19,8 @@ Start the supported game, then open the meter. It automatically starts a 12-hour
 The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
 
 ## Earlier preview changes
+
+Preview 8 added clean capture detach on exit, persistent capture state and version, richer encounter history, position lock, always-on-top, text size, and a local retry-splitting fallback verified against the Walter trace. It also reduced installed runtime files to those needed for capture and updating.
 
 Preview 2 also recognizes a game-exit trace as a completed capture, so it does not wait for a detach record when the game has already closed.
 

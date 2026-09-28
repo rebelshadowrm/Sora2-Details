@@ -42,7 +42,8 @@ public partial class MainWindow : Window
             Width = placement.Width;
             Height = placement.Height;
         }
-        ApplyDisplaySettings(resizeToRows: false);
+        ApplyDisplaySettings();
+        SourceInitialized += (_, _) => InitializeWindowInteraction();
         _placementSaveTimer.Tick += (_, _) =>
         {
             _placementSaveTimer.Stop();
@@ -84,6 +85,7 @@ public partial class MainWindow : Window
         _captureTask = _researchMode ? Task.CompletedTask : Task.Run(ReceiveCaptureAsync);
         Closed += (_, _) =>
         {
+            DisposeTray();
             _captureStatusTimer.Stop();
             _placementSaveTimer.Stop();
             SavePlacement();

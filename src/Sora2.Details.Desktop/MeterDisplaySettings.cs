@@ -7,9 +7,10 @@ internal sealed record MeterDisplaySettings(
     bool LockPosition = false,
     bool AlwaysOnTop = true,
     double Opacity = 1,
-    int FontSize = 12,
-    int VisibleRows = 6)
+    int FontSize = 12)
 {
+    public bool ClickThrough { get; init; }
+
     private static string PathName => Path.Combine(MeterDataDirectory.PathName, "meter-display.json");
 
     public static MeterDisplaySettings Load()
@@ -43,5 +44,5 @@ internal sealed record MeterDisplaySettings(
     }
 
     private bool IsValid() => double.IsFinite(Opacity) && Opacity is >= 0.55 and <= 1 &&
-        FontSize is >= 10 and <= 16 && VisibleRows is >= 3 and <= 20;
+        FontSize is >= 10 and <= 16;
 }

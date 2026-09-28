@@ -12,7 +12,7 @@ For an installed local build, double-click `Start-Sora2Details.cmd`. With the va
 
 The small status label shows Ready, Capturing, Stopping, or Error; click it to read the full capture message and installed version. Closing the meter while capture is active requests a clean detach before exit. If detachment fails, it warns before allowing an explicit exit anyway. History lists the local time, outcome, and PARTIAL status for each encounter.
 
-Open **Display settings** from the meter-title menu or right-click the header. Position lock, opacity, always-on-top, and text size persist in `%LOCALAPPDATA%\Sora2 Details\meter-display.json`. **Visible rows** changes the window height; extra rows remain available by scrolling. The existing meter position and size continue to use `meter-window.json`.
+Open **Display settings** from the meter-title menu or right-click the header. Position lock, whole-window opacity, always-on-top, text size, and click-through persist in `%LOCALAPPDATA%\Sora2 Details\meter-display.json`. Click-through passes mouse clicks to the game; double-click the Sora 2 Details system-tray icon or use its **Restore interaction and show meter** command to turn interaction back on. Resize the meter directly to show more or fewer rows. The existing meter position and size continue to use `meter-window.json`.
 
 The older ZIP-only builder remains available as `& .\tools\build_release.ps1`. That ZIP requires 64-bit Python 3.11+ for live capture. Use the Velopack installer above for the bundled runtime and updater. See [release notes](RELEASE-NOTES.md).
 

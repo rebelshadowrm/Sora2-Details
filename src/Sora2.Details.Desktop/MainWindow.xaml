@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Sora2.Details.Desktop"
         Title="Sora 2 Details" Width="340" Height="205" MinWidth="300" MinHeight="170"
-        WindowStyle="None" ResizeMode="CanResizeWithGrip" Topmost="True" ShowActivated="False"
+        WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResizeWithGrip"
+        Topmost="True" ShowActivated="False"
         Background="#17191D" Foreground="#F7F7F7" FontFamily="Segoe UI" FontSize="12">
     <Window.Resources>
         <DataTemplate DataType="{x:Type local:MeterPreview}">

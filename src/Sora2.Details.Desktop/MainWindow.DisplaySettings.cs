@@ -1,4 +1,5 @@
 using System.IO;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -7,10 +8,12 @@ namespace Sora2.Details.Desktop;
 
 public partial class MainWindow
 {
-    private void ApplyDisplaySettings(bool resizeToRows)
+    private void ApplyDisplaySettings()
     {
         Topmost = _displaySettings.AlwaysOnTop;
+        // A transparent WPF window applies opacity to the entire meter surface.
         Opacity = _displaySettings.Opacity;
+        ApplyWindowAppearance();
         FontSize = _displaySettings.FontSize;
         var rowHeight = Math.Max(23, _displaySettings.FontSize + 11);
         MeterRows.Tag = (double)rowHeight;
@@ -22,15 +25,22 @@ public partial class MainWindow
         HeaderDragArea.ToolTip = $"{dragHint} · right-click for display settings";
         EncounterHeader.ToolTip = dragHint;
         FooterDragArea.ToolTip = dragHint;
-        if (resizeToRows)
-            Height = Math.Min(SystemParameters.VirtualScreenHeight,
-                Math.Max(MinHeight, 71 + _displaySettings.VisibleRows * (rowHeight + 1)));
     }
 
-    private void SetDisplaySettings(MeterDisplaySettings settings, bool resizeToRows = false)
+    private void SetDisplaySettings(MeterDisplaySettings settings)
     {
+        var previous = _displaySettings;
         _displaySettings = settings;
-        ApplyDisplaySettings(resizeToRows);
+        try { ApplyDisplaySettings(); }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            _displaySettings = previous;
+            try { ApplyDisplaySettings(); }
+            catch (Win32Exception) { }
+            MessageBox.Show(this, $"Display settings could not be applied: {exception.Message}",
+                "Display settings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         try { _displaySettings.Save(); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -49,6 +59,20 @@ public partial class MainWindow
             LockPosition = lockPosition.IsChecked
         });
         menu.Items.Add(lockPosition);
+
+        var clickThrough = new MenuItem
+        {
+            Header = "Click-through (restore from tray)",
+            IsCheckable = true,
+            IsChecked = _displaySettings.ClickThrough,
+            IsEnabled = _trayIcon?.Visible == true,
+            ToolTip = "Pass all mouse clicks to the game; use the tray icon to restore interaction"
+        };
+        clickThrough.Click += (_, _) => SetDisplaySettings(_displaySettings with
+        {
+            ClickThrough = clickThrough.IsChecked
+        });
+        menu.Items.Add(clickThrough);
 
         var alwaysOnTop = new MenuItem { Header = "Always on top", IsCheckable = true,
             IsChecked = _displaySettings.AlwaysOnTop };
@@ -79,23 +103,11 @@ public partial class MainWindow
             choice.Click += (_, _) => SetDisplaySettings(_displaySettings with
             {
                 FontSize = size
-            }, resizeToRows: true);
+            });
             textSize.Items.Add(choice);
         }
         menu.Items.Add(textSize);
 
-        var visibleRows = new MenuItem { Header = "Visible rows" };
-        foreach (var count in new[] { 4, 6, 8, 10, 12, 15 })
-        {
-            var choice = new MenuItem { Header = count.ToString(), IsCheckable = true,
-                IsChecked = _displaySettings.VisibleRows == count };
-            choice.Click += (_, _) => SetDisplaySettings(_displaySettings with
-            {
-                VisibleRows = count
-            }, resizeToRows: true);
-            visibleRows.Items.Add(choice);
-        }
-        menu.Items.Add(visibleRows);
         return menu;
     }
 
