@@ -106,7 +106,11 @@ public partial class MainWindow
         UpdateButton.IsEnabled = false;
         try
         {
-            if (_availableUpdate is null) await CheckForUpdatesAsync();
+            if (_availableUpdate is null)
+            {
+                await CheckForUpdatesAsync();
+                return;
+            }
             if (_availableUpdate is null || _updateManager is null) return;
             UpdateButton.ToolTip = "Downloading verified update package...";
             await _updateManager.DownloadUpdatesAsync(_availableUpdate);
