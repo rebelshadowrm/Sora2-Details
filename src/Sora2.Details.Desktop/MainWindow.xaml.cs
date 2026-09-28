@@ -43,7 +43,12 @@ public partial class MainWindow : Window
         };
         Loaded += (_, _) => _placementReady = true;
         Loaded += async (_, _) => await CheckForUpdatesAsync();
-        Loaded += (_, _) => RefreshCaptureButton();
+        Loaded += async (_, _) =>
+        {
+            RefreshCaptureButton();
+            ReloadHistory();
+            if (!_researchMode && ActiveTraceName() is null) await StartCaptureAsync();
+        };
         LocationChanged += (_, _) => QueuePlacementSave();
         SizeChanged += (_, _) => QueuePlacementSave();
         Closing += (_, _) =>
@@ -128,12 +133,18 @@ public partial class MainWindow : Window
             _encounters = recorded;
             _sampleMode = false;
         }
-        DataSourceLabel.Text = _captureError is not null ? "ERROR" : _sampleMode ? "SAMPLE" : "RECORDED";
-        DataSourceLabel.ToolTip = _captureError ?? (_sampleMode
+        var activeTrace = ActiveTraceName();
+        DataSourceLabel.Text = _captureError is not null ? "ERROR" : activeTrace is not null && _followNewest ? "ARMED" :
+            _sampleMode ? "SAMPLE" : "RECORDED";
+        DataSourceLabel.ToolTip = _captureError ?? (activeTrace is not null && _followNewest
+            ? "Capture is active. Waiting for a command-battle entry or showing this session's latest fight."
+            : _sampleMode
             ? "Sample replay. No game capture adapter is connected."
             : "Saved encounter history.");
         var newest = _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault();
-        SelectEncounter(_followNewest ? newest :
+        var current = activeTrace is null ? newest : _encounters.FirstOrDefault(e =>
+            e.Issues?.Contains($"Raw trace: {activeTrace}") == true);
+        SelectEncounter(_followNewest ? current :
             _encounters.FirstOrDefault(e => e.Id == _selectedEncounter?.Id) ?? newest);
     }
 
@@ -165,21 +176,38 @@ public partial class MainWindow : Window
             MeterMode.Deaths => "Deaths  ▾",
             _ => "Meter  ▾"
         };
-        EncounterLabel.Text = _selectedEncounter?.Label ?? "No encounter selected";
+        var waiting = _selectedEncounter is null && ActiveTraceName() is not null && _followNewest;
+        EncounterLabel.Text = _selectedEncounter?.Label ??
+            (waiting ? "Waiting for next command battle" : "No encounter selected");
         if (_selectedEncounter is null)
         {
             MeterRows.ItemsSource = null;
-            FooterLabel.Text = "No encounters";
+            BackButton.Visibility = Visibility.Collapsed;
+            FooterLabel.Text = waiting ? "Capture armed · enter a new command battle" : "No encounters";
+            FooterLabel.ToolTip = waiting
+                ? "A battle already open when capture starts cannot be reconstructed. Open the encounter menu for saved fights."
+                : null;
             return;
         }
 
         var rows = EncounterProjection.Rows(_selectedEncounter, _mode);
         var livePartial = !_researchMode && _selectedEncounter.Issues?.Any(issue =>
             issue.StartsWith("Live partial capture:", StringComparison.Ordinal)) == true;
-        if (livePartial && _captureError is null)
+        var activeTrace = ActiveTraceName();
+        var selectedFromActiveTrace = activeTrace is not null &&
+            _selectedEncounter.Issues?.Contains($"Raw trace: {activeTrace}") == true;
+        if (livePartial && _captureError is null && (activeTrace is null || selectedFromActiveTrace))
         {
-            DataSourceLabel.Text = "LIVE / PARTIAL";
+            DataSourceLabel.Text = selectedFromActiveTrace ? "LIVE / PARTIAL" : "PARTIAL";
             DataSourceLabel.ToolTip = "Observed game results with known coverage gaps. Open the timeline or footer for details.";
+        }
+        else if (_captureError is null && !_researchMode)
+        {
+            DataSourceLabel.Text = activeTrace is not null && _followNewest ? "ARMED" :
+                _sampleMode ? "SAMPLE" : "RECORDED";
+            DataSourceLabel.ToolTip = activeTrace is not null && _followNewest
+                ? "Capture is active. Waiting for a command-battle entry or showing this session's latest fight."
+                : "Saved encounter history.";
         }
         IReadOnlyList<MeterDisplayRow> displayRows;
         var displayedTotal = rows.Sum(row => row.Value);
@@ -238,13 +266,24 @@ public partial class MainWindow : Window
     private void HistoryButton_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
+        var activeTrace = ActiveTraceName();
+        if (activeTrace is not null)
+        {
+            var current = new MenuItem { Header = "Current / live", IsCheckable = true,
+                IsChecked = _followNewest };
+            current.Click += (_, _) => { _followNewest = true; ReloadHistory(); };
+            menu.Items.Add(current);
+            menu.Items.Add(new Separator());
+        }
         foreach (var encounter in EncounterProjection.Recent(_encounters))
         {
             var choice = new MenuItem { Header = encounter.Label, IsCheckable = true,
-                IsChecked = encounter.Id == _selectedEncounter?.Id };
+                IsChecked = (activeTrace is null || !_followNewest) &&
+                    encounter.Id == _selectedEncounter?.Id };
             choice.Click += (_, _) =>
             {
-                _followNewest = encounter.Id == _encounters.OrderByDescending(e => e.StartedAt).First().Id;
+                _followNewest = activeTrace is null &&
+                    encounter.Id == _encounters.OrderByDescending(e => e.StartedAt).First().Id;
                 SelectEncounter(encounter);
             };
             menu.Items.Add(choice);
@@ -256,7 +295,7 @@ public partial class MainWindow : Window
             var history = new HistoryWindow(_encounters) { Owner = this };
             if (history.ShowDialog() == true)
             {
-                _followNewest = history.SelectedEncounter?.Id ==
+                _followNewest = activeTrace is null && history.SelectedEncounter?.Id ==
                     _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault()?.Id;
                 SelectEncounter(history.SelectedEncounter);
             }

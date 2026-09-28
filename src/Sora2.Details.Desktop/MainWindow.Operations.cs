@@ -27,12 +27,22 @@ public partial class MainWindow
             {
                 var detached = await EnsureCaptureDetachedAsync();
                 CaptureButton.ToolTip = detached ? "Capture detached." : "Capture did not detach; try Stop-Sora2Details.cmd.";
-                if (detached) CaptureButton.Content = "●";
+                if (detached)
+                {
+                    CaptureButton.Content = "●";
+                    ReloadHistory();
+                }
             }
             catch (Exception exception) { CaptureButton.ToolTip = $"Stop failed: {exception.Message}"; }
             finally { _captureBusy = false; }
             return;
         }
+        await StartCaptureAsync();
+    }
+
+    private async Task StartCaptureAsync()
+    {
+        if (_captureBusy || ActiveTraceName() is not null) return;
         var launcher = FindLauncher();
         if (launcher is null)
         {
@@ -97,7 +107,12 @@ public partial class MainWindow
             CaptureButton.ToolTip = process.ExitCode == 0
                 ? "Partial command-battle capture is running. Start before entering a fight."
                 : $"Capture could not start: {(string.IsNullOrEmpty(error) ? output : error)}";
-            if (process.ExitCode == 0) RememberGameDirectory(gameDirectory);
+            if (process.ExitCode == 0)
+            {
+                RememberGameDirectory(gameDirectory);
+                _followNewest = true;
+                ReloadHistory();
+            }
             CaptureButton.Content = process.ExitCode == 0 ? "■" : "●";
         }
         catch (Exception exception)
@@ -254,6 +269,27 @@ public partial class MainWindow
             CaptureButton.ToolTip = "Stop the current capture cleanly.";
         }
         catch (Exception) { /* An old or partial session record is not a live capture. */ }
+    }
+
+    private string? ActiveTraceName()
+    {
+        try
+        {
+            var path = CurrentCapturePath();
+            if (!File.Exists(path)) return null;
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            var root = json.RootElement;
+            var trace = root.GetProperty("trace").GetString();
+            if (string.IsNullOrWhiteSpace(trace) || TraceShowsDetach(trace)) return null;
+            var bridgePid = root.GetProperty("bridgePid").GetInt32();
+            using var bridge = Process.GetProcessById(bridgePid);
+            return bridge.HasExited ? null : Path.GetFileName(trace);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or InvalidOperationException or
+                                        ArgumentException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
     }
 
     private static string CurrentCapturePath()
