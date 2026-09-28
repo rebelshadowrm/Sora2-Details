@@ -306,10 +306,49 @@ def main():
         staggered_bridge.handle({"at": "2026-09-28T16:06:00.000-05:00",
                                  "kind": "hit", "name": "HpSet", "tid": 1,
                                  "status_actor_id": 0, "status_ptr": "0x1",
-                                 "hp_before": 100, "hp_max": 100,
-                                 "requested_hp": 90})
+                                 "hp_before": 35, "hp_max": 100,
+                                 "requested_hp": 20})
         assert staggered_bridge.current["id"] != staggered_id
         assert staggered_bridge.current["outcome"] == "InProgress"
+        assert staggered_bridge.current["events"][0]["hpBefore"] == 35
+        assert staggered_bridge.current["events"][0]["effectiveAmount"] == 15
+        attack_retry = LiveBridge(root / "attack_retry", "attack-retry.jsonl")
+        attack_retry.handle({"at": "2026-09-28T16:00:00.000-05:00",
+                             "kind": "hit", "name": "BattleInit"})
+        old_attempt_id = attack_retry.current["id"]
+        for actor_id in range(4):
+            attack_retry.handle({"at": f"2026-09-28T16:00:10.00{actor_id}-05:00",
+                                 "kind": "hit", "name": "HpSet", "tid": 1,
+                                 "status_actor_id": actor_id,
+                                 "status_ptr": f"0x{actor_id + 1:x}",
+                                 "hp_before": 50, "hp_max": 100,
+                                 "requested_hp": -1})
+        attack_retry.handle({"at": "2026-09-28T16:01:00.000-05:00",
+                             "kind": "hit", "name": "AttackEffectCall", "tid": 1,
+                             "source_actor_id": 60050, "source_status_ptr": "0x22",
+                             "target_actor_id": 60051, "target_status_ptr": "0x33",
+                             "candidate_resolved_amount": 10})
+        assert attack_retry.current["id"] == old_attempt_id
+        attack_retry.handle({"at": "2026-09-28T16:01:01.000-05:00",
+                             "kind": "hit", "name": "AttackEffectCall", "tid": 1,
+                             "source_actor_id": 1, "source_status_ptr": "0x2",
+                             "target_actor_id": 60050, "target_status_ptr": "0x22",
+                             "candidate_resolved_amount": 10})
+        assert attack_retry.current["id"] != old_attempt_id
+        attack_retry.handle({"at": "2026-09-28T16:01:01.001-05:00",
+                             "kind": "hit", "name": "HpSet", "tid": 1,
+                             "status_actor_id": 60050, "status_ptr": "0x22",
+                             "hp_before": 50, "hp_max": 50,
+                             "requested_hp": 40})
+        assert [(event["kind"], event["effectiveAmount"]) for event in
+                attack_retry.current["events"]] == [("Damage", 10)]
+        assert attack_retry.current["events"][0]["sourceId"] == "status-2"
+        old_attempt = next(json.loads(path.read_text(encoding="utf-8"))
+                           for path in (root / "attack_retry").glob("*.json")
+                           if json.loads(path.read_text(encoding="utf-8"))["id"] == old_attempt_id)
+        assert old_attempt["outcome"] == "Defeat"
+        assert all(event["observedAt"] < "2026-09-28T16:01:01" for event in
+                   old_attempt["events"])
         revive_bridge = LiveBridge(root / "revive_encounters", "revive.jsonl")
         revive_bridge.handle({"at": "2026-09-28T16:00:00.000-05:00",
                               "kind": "hit", "name": "BattleInit"})

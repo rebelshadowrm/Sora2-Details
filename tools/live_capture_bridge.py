@@ -385,12 +385,33 @@ class LiveBridge:
         self.current = None
         self.pending.clear()
 
+    def infer_retry(self, record, evidence):
+        self.issue(f"Full-party knockout followed by {evidence}; Retry boundary inferred. Result and exact entry time remain unverified.")
+        self.current["outcome"] = "Defeat"
+        self.current["label"] = (
+            f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · defeat (inferred)")
+        self.save()
+        self.current = None
+        self.start(record, f"Retry entry inferred from a full-party knockout and {evidence}; opening events during the gap may be missing.")
+
+    def observe_retry_attack(self, record):
+        """A party member last seen at zero HP cannot attack in that attempt."""
+        actor_id = record.get("source_actor_id")
+        pointer = record.get("source_status_ptr")
+        if (self.pending_wipe is None or actor_id not in self.knocked_out_party or
+                not pointer or self.observed_party_hp.get(pointer) != 0 or
+                (datetime.fromisoformat(record["at"]) - self.pending_wipe).total_seconds() < 2):
+            return False
+        self.infer_retry(record, "a party attack from a member last observed at zero HP")
+        return True
+
     def observe_party_hp(self, record):
         """Recognize a retry after a four-member wipe and direct HP reset.
 
         Walter's Retry bypassed both lifecycle hooks and restored party status
-        without an HP-setter call. A normal revive passes through the setter
-        with hp_before=0, so it stays inside the existing encounter.
+        without an HP-setter call. The first later setter may already see a
+        damaged party member, rather than full HP. A normal revive passes
+        through the setter with hp_before=0 and stays in this encounter.
         """
         actor_id = record.get("status_actor_id")
         pointer = record.get("status_ptr")
@@ -404,14 +425,16 @@ class LiveBridge:
         observed_at = datetime.fromisoformat(record["at"])
         if (self.pending_wipe is not None and
                 (observed_at - self.pending_wipe).total_seconds() >= 2 and
-                self.observed_party_hp.get(pointer) == 0 and before == maximum):
-            self.issue("Full-party knockout followed by a direct HP reset; Retry boundary inferred. Result and exact entry time remain unverified.")
-            self.current["outcome"] = "Defeat"
-            self.current["label"] = (
-                f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · defeat (inferred)")
-            self.save()
-            self.current = None
-            self.start(record, "Retry entry inferred from a full-party knockout and direct HP reset; opening events during the gap may be missing.")
+                self.observed_party_hp.get(pointer) == 0 and 0 < before <= maximum):
+            pending_attack = self.pending.get(record.get("tid"))
+            if (pending_attack is not None and
+                    (pending_attack.get("target_status_ptr") != pointer or
+                     datetime.fromisoformat(pending_attack["at"]) <= self.pending_wipe)):
+                pending_attack = None
+            self.infer_retry(record, "an unwatched positive HP reset")
+            if pending_attack is not None:
+                self.pending[record.get("tid")] = pending_attack
+                self.observe_identity(pending_attack)
             return True
         after = max(0, min(maximum, requested))
         self.observed_party_hp[pointer] = after
@@ -575,6 +598,7 @@ class LiveBridge:
             elif name == "BattleEnd":
                 self.end(record)
             elif name == "AttackEffectCall" and self.current is not None:
+                self.observe_retry_attack(record)
                 self.observe_identity(record)
                 tid = record.get("tid")
                 if tid in self.pending:
