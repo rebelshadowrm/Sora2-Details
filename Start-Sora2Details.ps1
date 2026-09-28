@@ -37,7 +37,23 @@ if ($game.Count -ne 1) { throw "Expected one sora_2nd process; found $($game.Cou
 if (-not $GameDirectory) {
     try { $GameDirectory = Split-Path $game[0].MainModule.FileName -Parent } catch { }
     if (-not $GameDirectory) {
-        $GameDirectory = 'C:\Games\Trails in the Sky 2nd Chapter'
+        $savedPath = Join-Path $env:LOCALAPPDATA 'Sora2 Details\game-directory.txt'
+        if (Test-Path -LiteralPath $savedPath) {
+            try {
+                $savedDirectory = (Get-Content -LiteralPath $savedPath -Raw).Trim()
+                if (Test-Path -LiteralPath (Join-Path $savedDirectory 'sora_2nd.exe')) {
+                    $GameDirectory = $savedDirectory
+                }
+            } catch { }
+        }
+    }
+    if (-not $GameDirectory) {
+        $originalInstall = 'C:\Games\Trails in the Sky 2nd Chapter'
+        if (Test-Path -LiteralPath (Join-Path $originalInstall 'sora_2nd.exe')) {
+            $GameDirectory = $originalInstall
+        } else {
+            throw 'Could not locate sora_2nd.exe. Click Capture in the meter to choose it, or pass -GameDirectory.'
+        }
     }
 }
 

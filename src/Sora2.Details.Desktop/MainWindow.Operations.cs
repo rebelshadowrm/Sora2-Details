@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using Microsoft.Win32;
 using Velopack;
 using Velopack.Sources;
 
@@ -38,6 +39,40 @@ public partial class MainWindow
             CaptureButton.ToolTip = "Capture launcher is missing from this package.";
             return;
         }
+        var games = Process.GetProcessesByName("sora_2nd");
+        string? gameDirectory;
+        try
+        {
+            if (games.Length != 1)
+            {
+                CaptureButton.ToolTip = games.Length == 0
+                    ? "Start the game before beginning capture."
+                    : "Capture needs exactly one running game process.";
+                return;
+            }
+            gameDirectory = ResolveGameDirectory(games[0]);
+        }
+        finally
+        {
+            foreach (var game in games) game.Dispose();
+        }
+        if (gameDirectory is null)
+        {
+            var picker = new OpenFileDialog
+            {
+                Title = "Locate Trails in the Sky 2nd Chapter",
+                Filter = "Game executable (sora_2nd.exe)|sora_2nd.exe",
+                FileName = "sora_2nd.exe",
+                CheckFileExists = true
+            };
+            if (picker.ShowDialog(this) != true)
+            {
+                CaptureButton.ToolTip = "Capture not started. Select sora_2nd.exe to locate the game.";
+                return;
+            }
+            gameDirectory = Path.GetDirectoryName(picker.FileName);
+        }
+        if (gameDirectory is null) return;
         _captureBusy = true;
         CaptureButton.ToolTip = "Starting capture; Windows may request administrator approval.";
         try
@@ -50,7 +85,8 @@ public partial class MainWindow
                 RedirectStandardError = true,
                 WorkingDirectory = Path.GetDirectoryName(launcher)!
             };
-            foreach (var argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher, "-CaptureOnly" })
+            foreach (var argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher,
+                         "-CaptureOnly", "-GameDirectory", gameDirectory })
                 start.ArgumentList.Add(argument);
             using var process = Process.Start(start) ?? throw new IOException("PowerShell did not start.");
             var stdout = process.StandardOutput.ReadToEndAsync();
@@ -61,6 +97,7 @@ public partial class MainWindow
             CaptureButton.ToolTip = process.ExitCode == 0
                 ? "Partial command-battle capture is running. Start before entering a fight."
                 : $"Capture could not start: {(string.IsNullOrEmpty(error) ? output : error)}";
+            if (process.ExitCode == 0) RememberGameDirectory(gameDirectory);
             CaptureButton.Content = process.ExitCode == 0 ? "■" : "●";
         }
         catch (Exception exception)
@@ -69,6 +106,58 @@ public partial class MainWindow
         }
         finally { _captureBusy = false; }
     }
+
+    private static string? ResolveGameDirectory(Process game)
+    {
+        try
+        {
+            var runningExe = game.MainModule?.FileName;
+            if (runningExe is not null && File.Exists(runningExe))
+                return Path.GetDirectoryName(runningExe);
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or
+                                           InvalidOperationException or UnauthorizedAccessException)
+        {
+            // Windows may hide the executable path until the probe is elevated.
+        }
+        var saved = ReadGameDirectory();
+        if (saved is not null) return saved;
+        const string originalInstall = @"C:\Games\Trails in the Sky 2nd Chapter";
+        return File.Exists(Path.Combine(originalInstall, "sora_2nd.exe")) ? originalInstall : null;
+    }
+
+    private static string? ReadGameDirectory()
+    {
+        try
+        {
+            var path = GameDirectorySettingPath();
+            if (!File.Exists(path)) return null;
+            var directory = File.ReadAllText(path).Trim();
+            return File.Exists(Path.Combine(directory, "sora_2nd.exe")) ? directory : null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static void RememberGameDirectory(string directory)
+    {
+        try
+        {
+            var path = GameDirectorySettingPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, directory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A protected settings folder should not prevent this capture attempt.
+        }
+    }
+
+    private static string GameDirectorySettingPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Sora2 Details", "game-directory.txt");
 
     private static string? FindLauncher()
     {
