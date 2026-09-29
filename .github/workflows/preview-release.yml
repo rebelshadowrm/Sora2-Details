@@ -6,16 +6,35 @@ on:
       - 'v*-preview.*'
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 350
+    env:
+      # Leave unset/false to preserve the current unsigned preview publishing path.
+      # Set true only after SignPath approval and all project/action configuration is complete.
+      SIGNPATH_ENABLED: ${{ vars.SIGNPATH_ENABLED }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+      - name: Parse release version metadata
+        id: release_version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:RELEASE_TAG.Substring(1)
+          $pattern = '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+          $match = [regex]::Match($version, $pattern)
+          if (-not $match.Success) { throw "Tag does not contain a supported semantic version: $env:RELEASE_TAG" }
+          $fileVersion = '{0}.{1}.{2}.0' -f $match.Groups['major'].Value, $match.Groups['minor'].Value, $match.Groups['patch'].Value
+          "product_version=$version" >> $env:GITHUB_OUTPUT
+          "file_version=$fileVersion" >> $env:GITHUB_OUTPUT
       - name: Restore pinned Velopack CLI
         run: dotnet tool restore
       - name: Fetch previous preview for a delta update
@@ -27,21 +46,92 @@ jobs:
             --repoUrl "https://github.com/$env:GITHUB_REPOSITORY" `
             --channel win-x64-preview --pre `
             --outputDir releases/velopack-preview
-      - name: Build and test installer
+      - name: Build and test unsigned release artifacts
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.product_version }}
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          & .\tools\build_installer.ps1 -Version $version
+          $version = $env:RELEASE_VERSION
+          if ($env:SIGNPATH_ENABLED -ieq 'true') {
+            # Deltas made before signing could recreate unsigned executable bytes.
+            & .\tools\build_installer.ps1 -Version $version -SignParams '' -DisableDelta
+          } else {
+            & .\tools\build_installer.ps1 -Version $version -SignParams ''
+          }
+
+      - name: Prepare current-version SignPath artifact
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.product_version }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          $destination = Join-Path $env:RUNNER_TEMP 'signpath-input'
+          & .\tools\prepare_signpath_artifact.ps1 -Version $version -DestinationDirectory $destination
+
+      - name: Upload unsigned release artifact for SignPath
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        id: upload_unsigned_release
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-preview-release
+          path: ${{ runner.temp }}\signpath-input\*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      # SignPath configuration is intentionally external to source control.
+      # Supply the approved organization/project/policy/configuration as Actions variables
+      # and the submitter API token as the SIGNPATH_API_TOKEN Actions secret.
+      - name: Submit, approve, and retrieve signed release with SignPath
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload_unsigned_release.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 20900
+          output-artifact-directory: ${{ runner.temp }}\signpath-signed
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parameters: |
+            version: ${{ toJSON(steps.release_version.outputs.product_version) }}
+            fileVersion: ${{ toJSON(steps.release_version.outputs.file_version) }}
+
+      - name: Verify SignPath Authenticode signatures
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.product_version }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          & .\tools\verify_signpath_artifact.ps1 -Version $version `
+            -ArtifactDirectory (Join-Path $env:RUNNER_TEMP 'signpath-signed')
+
+      - name: Import signed artifacts and refresh feed hashes
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.product_version }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          & .\tools\import_signpath_artifact.ps1 -Version $version `
+            -SignedDirectory (Join-Path $env:RUNNER_TEMP 'signpath-signed')
+
       - name: Publish GitHub prerelease and update feed
         shell: pwsh
         env:
           VPK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           dotnet vpk upload github `
             --outputDir releases/velopack-preview `
             --channel win-x64-preview `
             --repoUrl "https://github.com/$env:GITHUB_REPOSITORY" `
-            --tag $env:GITHUB_REF_NAME `
-            --releaseName "Sora 2 Details $env:GITHUB_REF_NAME" `
+            --tag $env:RELEASE_TAG `
+            --releaseName "Sora 2 Details $env:RELEASE_TAG" `
             --targetCommitish $env:GITHUB_SHA `
             --pre --publish

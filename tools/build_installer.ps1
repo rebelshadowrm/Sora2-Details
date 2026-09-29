@@ -2,16 +2,25 @@ param(
     [string]$Version = '0.2.0-preview.1',
     [string]$OutputDir,
     [string]$SignParams = $env:VPK_SIGN_PARAMS,
-    [switch]$RequireSigning
+    [switch]$RequireSigning,
+    [switch]$DisableDelta
 )
 
 $ErrorActionPreference = 'Stop'
 if ($RequireSigning -and [string]::IsNullOrWhiteSpace($SignParams)) {
     throw 'RequireSigning needs SignParams (or VPK_SIGN_PARAMS) for the configured signing identity.'
 }
-if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+if ($Version -notmatch '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$') {
     throw 'Use a semantic version such as 0.2.0-preview.1.'
 }
+$fileVersion = '{0}.{1}.{2}.0' -f $Matches.major, $Matches.minor, $Matches.patch
+$versionMetadata = @(
+    "-p:Version=$Version",
+    "-p:AssemblyVersion=$fileVersion",
+    "-p:FileVersion=$fileVersion",
+    "-p:InformationalVersion=$Version",
+    '-p:IncludeSourceRevisionInInformationalVersion=false'
+)
 
 $root = Split-Path $PSScriptRoot -Parent
 $releaseRoot = Join-Path $root 'releases'
@@ -36,18 +45,31 @@ try {
         throw 'Bundled Python download failed its pinned SHA-256 check.'
     }
 
-    & dotnet build (Join-Path $root 'Sora2.Details.sln') -c Release
+    & dotnet build (Join-Path $root 'Sora2.Details.sln') -c Release @versionMetadata
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
     & dotnet run --project (Join-Path $root 'tests\Sora2.Details.Checks') -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'Replay and projection checks failed.' }
     & dotnet publish (Join-Path $root 'src\Sora2.Details.Desktop\Sora2.Details.Desktop.csproj') `
         -c Release -r win-x64 --self-contained true `
-        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $stage
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true @versionMetadata -o $stage
     if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
     & dotnet publish (Join-Path $root 'src\Sora2.Details.CaptureHost\Sora2.Details.CaptureHost.csproj') `
         -c Release -r win-x64 --self-contained true -p:PublishTrimmed=true `
-        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $stage
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true @versionMetadata -o $stage
     if ($LASTEXITCODE -ne 0) { throw 'Capture host publish failed.' }
+
+    foreach ($executableName in @('Sora2.Details.Desktop.exe', 'Sora2.Details.CaptureHost.exe')) {
+        $executablePath = Join-Path $stage $executableName
+        $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($executablePath)
+        if ($versionInfo.ProductName -ne 'Sora 2 Details' -or
+            $versionInfo.FileVersion -ne $fileVersion -or
+            $versionInfo.ProductVersion -ne $Version) {
+            throw "Unexpected product/file/informational version metadata in $executableName. " +
+                "Expected product 'Sora 2 Details', file $fileVersion, product version $Version; " +
+                "found product '$($versionInfo.ProductName)', file '$($versionInfo.FileVersion)', " +
+                "product version '$($versionInfo.ProductVersion)'."
+        }
+    }
 
     $tools = Join-Path $stage 'tools'
     $python = Join-Path $stage 'python'
@@ -64,7 +86,8 @@ try {
         Copy-Item -LiteralPath (Join-Path $root "tools\$name") -Destination $tools
     }
     foreach ($name in @('Start-Sora2Details.ps1', 'Start-Sora2Details.cmd',
-                       'Stop-Sora2Details.ps1', 'Stop-Sora2Details.cmd', 'README.md', 'RELEASE-NOTES.md')) {
+                       'Stop-Sora2Details.ps1', 'Stop-Sora2Details.cmd', 'README.md',
+                       'RELEASE-NOTES.md', 'CODE-SIGNING-POLICY.md', 'LICENSE')) {
         Copy-Item -LiteralPath (Join-Path $root $name) -Destination $stage
     }
     Expand-Archive -LiteralPath $pythonZip -DestinationPath $python
@@ -97,18 +120,33 @@ try {
     } else {
         Write-Warning 'Unsigned preview: Windows may display Unknown publisher and SmartScreen warnings.'
     }
+    $deltaArguments = if ($DisableDelta) { @('--delta', 'None') } else { @() }
     & dotnet vpk pack --packId Sora2.Details --packVersion $Version --packDir $stage `
         --mainExe Sora2.Details.Desktop.exe --packTitle 'Sora 2 Details' `
         --packAuthors 'Sora 2 Details contributors' --runtime win-x64 `
         --channel win-x64-preview --outputDir $output `
         --icon (Join-Path $root 'src\Sora2.Details.Desktop\assets\sora2-details.ico') `
-        --releaseNotes (Join-Path $root 'RELEASE-NOTES.md') @signArguments
+        --releaseNotes (Join-Path $root 'RELEASE-NOTES.md') @signArguments @deltaArguments
     if ($LASTEXITCODE -ne 0) { throw 'Velopack packaging failed.' }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $portablePath = Join-Path $output 'Sora2.Details-win-x64-preview-Portable.zip'
+    $portableForUninstallCheck = [IO.Compression.ZipFile]::OpenRead($portablePath)
+    try {
+        $updateEntry = $portableForUninstallCheck.GetEntry('Update.exe')
+        if ($null -eq $updateEntry) { throw 'Portable package has no Velopack Update.exe.' }
+        $updatePath = Join-Path $stage 'verify-Update.exe'
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($updateEntry, $updatePath, $true)
+        $updateHelp = (& $updatePath --help 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $updateHelp -notmatch 'Update\.exe uninstall') {
+            throw 'Packaged Velopack updater does not expose its Windows uninstall command.'
+        }
+    } finally { $portableForUninstallCheck.Dispose() }
+
     if ($RequireSigning) {
         # Inspect delivered bytes: Velopack may sign a working copy of packDir.
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
         $portable = [IO.Compression.ZipFile]::OpenRead(
-            (Join-Path $output 'Sora2.Details-win-x64-preview-Portable.zip'))
+            $portablePath)
         $signedFiles = @((Join-Path $output 'Sora2.Details-win-x64-preview-Setup.exe'))
         try {
             foreach ($entryName in @('current/Sora2.Details.Desktop.exe',

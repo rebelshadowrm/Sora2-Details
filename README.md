@@ -2,11 +2,19 @@
 
 Windows **command-battle combat logger** for **Trails in the Sky 2nd Chapter**, with a Details-like meter as one view of the log. [Complete action and outcome capture](docs/COMBAT-LOG-PRIORITY.md) is the primary goal. The app shows sample replay data until recorded encounters exist. A bounded, read-only **partial live capture** is now available for the validated English game build.
 
+## Code signing policy
+
+See the [Code signing policy](CODE-SIGNING-POLICY.md) for signing roles, privacy and network behavior, build provenance, and capture security. The project is licensed under the [MIT License](LICENSE). Current Windows previews are unsigned; SignPath Foundation signing is pending application approval and configuration.
+
 ## Run
 
 Startup, elevation, signing, and packaging tradeoffs are documented in the [distribution UX audit](docs/DISTRIBUTION-UX.md). New local installer builds use a branded **Sora 2 Details Capture** administrator prompt. Unsigned builds can still show Windows publisher/reputation warnings; signing is a separate release configuration.
 
 The easiest shareable build is the **Windows x64 preview installer** on [GitHub Releases](https://github.com/rebelshadowrm/Sora2-Details/releases). Install once, start the validated game, then open **Sora 2 Details** from the desktop or Start menu. The meter starts partial live capture automatically. Before the first elevation, the app explains that the branded **Sora 2 Details Capture** helper reads the supported game process for partial command-battle activity. The probe is read-only and does not change game files or game state; the meter and saved history work without administrator access. Continue to see the standard Windows approval prompt, or decline and use the meter without live capture. Windows may identify this unsigned preview's publisher as Unknown. The explanation is shown once and remembered across updates; each new capture session can still request Windows approval. Click **■** to detach or **●** to retry. The app normally finds the game's folder from its running process; if Windows hides that path, the first capture asks you to select `sora_2nd.exe` and remembers the successful location. The installer itself does not need a game-folder step. The **↻** control checks for a newer preview, and **↑** downloads it and restarts the app after capture detaches. The installer bundles the required Python runtime and .NET app; no separate Python or .NET installation is needed. The meter still displays saved encounters when the game is closed. Capture is limited to the verified game executable SHA-256 and remains partial.
+
+### Uninstall
+
+To uninstall an installed preview, stop capture, close Sora 2 Details, and uninstall **Sora 2 Details** from **Windows Settings > Apps > Installed apps** (or **Apps & features** on older Windows versions). Velopack registers the app's uninstall command and removes its installed files, shortcuts, and uninstall entry. The app's separately stored history and settings remain under `%LOCALAPPDATA%\Sora2 Details`; delete that folder yourself only if you also want to remove that local data. Portable ZIP builds do not register an installer and can be removed by closing the app and deleting its extracted folder.
 
 Build an installer locally with `& .\tools\build_installer.ps1 -Version 0.2.0-preview.14`. This creates a Velopack Setup executable, portable ZIP, full update package, and `releases.win-x64-preview.json` under `releases\velopack-preview`. The script verifies the pinned Python embedded-runtime download. Push a `vX.Y.Z-preview.N` tag to run the Windows release workflow; it publishes the installer and update feed as a GitHub prerelease. Install settings, encounters, and raw probe traces live under `%LOCALAPPDATA%\Sora2 Details`, outside the app directory that Velopack replaces during updates.
 
@@ -16,7 +24,7 @@ The small status label shows Ready, Capturing, Stopping, or Error; click it to r
 
 Open **Display settings** from the meter-title menu or right-click the header. Position lock, whole-window opacity, always-on-top, text size, and click-through persist in `%LOCALAPPDATA%\Sora2 Details\meter-display.json`. Click-through passes mouse clicks to the game; double-click the Sora 2 Details system-tray icon or use its **Restore interaction and show meter** command to turn interaction back on. Resize the meter directly to show more or fewer rows. The existing meter position and size continue to use `meter-window.json`.
 
-The older ZIP-only builder remains available as `& .\tools\build_release.ps1`. That ZIP requires 64-bit Python 3.11+ for live capture. Use the Velopack installer above for the bundled runtime and updater. See [release notes](RELEASE-NOTES.md).
+The older ZIP-only builder remains available as `& .\tools\build_release.ps1`. That ZIP requires 64-bit Python 3.11+ for live capture. Use the Velopack installer above for the bundled runtime and updater. See [release notes](RELEASE-NOTES.md) and the [Code signing policy](CODE-SIGNING-POLICY.md).
 
 Development commands require the .NET 9 SDK and Windows desktop runtime.
 

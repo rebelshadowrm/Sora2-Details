@@ -1,5 +1,9 @@
 # Sora 2 Details 0.2.0 preview 14
 
+## Code signing policy
+
+See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status, roles, privacy and network behavior, build provenance, and capture security. This Windows preview is unsigned while SignPath Foundation approval and configuration are pending. See [uninstall instructions](README.md#uninstall) in the project README.
+
 ## Capture improvements in preview 13
 
 - Encounter history can focus on boss and unclassified fights, while preserving marked regular fights under All fights. Candidate labels remain cautious; manual Boss and Regular marks are available and persist across app updates.

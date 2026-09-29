@@ -36,7 +36,7 @@ try {
         ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $docs }
     foreach ($name in @('Start-Sora2Details.ps1', 'Start-Sora2Details.cmd',
                        'Stop-Sora2Details.ps1', 'Stop-Sora2Details.cmd',
-                       'README.md', 'RELEASE-NOTES.md')) {
+                       'README.md', 'RELEASE-NOTES.md', 'CODE-SIGNING-POLICY.md', 'LICENSE')) {
         Copy-Item -LiteralPath (Join-Path $root $name) -Destination $stage
     }
     $commit = (& git -C $root rev-parse --short HEAD 2>$null)
