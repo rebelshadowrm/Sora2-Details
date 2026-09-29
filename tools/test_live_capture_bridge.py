@@ -7,6 +7,7 @@ import tempfile
 
 from live_capture_bridge import (LiveBridge, consume, damage_class_for_flags,
                                  source_context_flags, lookup_live_move,
+                                 lookup_live_move_with_reason,
                                  observed_effect_descriptor, target_status_7c)
 
 
@@ -92,6 +93,9 @@ def main():
         assert first["events"][0]["rawResultFlags"] == 0x42000
         assert first["events"][0]["isCritical"] is None
         assert first["events"][0]["damageClass"] == "Physical"
+        assert first["events"][0]["moveLookupReason"] == "effect-descriptor-missing"
+        assert first["events"][1]["moveLookupReason"] == "hp-write-without-attack-result"
+        assert first["events"][-1]["moveLookupReason"] == "effect-descriptor-missing"
         assert {actor["name"] for actor in first["actors"]} == {"Agate", "Synthetic Enemy"}
         assert next(actor for actor in first["actors"] if actor["team"] == "Enemy")["nameProvenance"] == "unique-stat-signature/exact-English-t_status"
         assert not first["isComplete"] and first["issues"]
@@ -153,6 +157,7 @@ def main():
                             "hp_before": 20, "hp_max": 20, "requested_hp": 10})
         assert [event["kind"] for event in interleaved.current["events"]] == ["Healing", "Damage"]
         assert interleaved.current["events"][0]["sourceId"] is None
+        assert interleaved.current["events"][0]["moveLookupReason"] == "hp-write-without-attack-result"
         assert interleaved.current["events"][1]["sourceId"] == "status-11"
         assert not interleaved.pending
         swapped = LiveBridge(root / "swapped", "synthetic.jsonl", name_rows=[
@@ -197,13 +202,17 @@ def main():
             assert effect["damageClassProvenance"]
             assert effect["rawEffectId"] == effect["moveId"]
             assert effect["rawEffectCode"] == row["rawParam30"]
+            assert effect["moveLookupReason"] is None
             if index == 0:
                 descriptor[0x30] = 0xF  # Same ID but wrong parameter: reject.
-                assert lookup_live_move(dict(attack, effect_descriptor_100=descriptor.hex()),
-                                        move_bridge.skill_lookup) is None
+                assert lookup_live_move_with_reason(
+                    dict(attack, effect_descriptor_100=descriptor.hex()),
+                    move_bridge.skill_lookup) == (None, "skill-parameters-mismatch")
         # Source-owner mismatch must not apply a party member's move to another actor.
         assert lookup_live_move(dict(attack, source_actor_id=5),
                                 move_bridge.skill_lookup) is None
+        assert lookup_live_move_with_reason(dict(attack, source_actor_id=5),
+                                            move_bridge.skill_lookup)[1] == "skill-owner-mismatch"
         unknown_descriptor = bytearray(0x100)
         struct.pack_into("<I", unknown_descriptor, 0, 0xEA7E03E8)
         struct.pack_into("<I", unknown_descriptor, 0x30, 0xC)
@@ -221,6 +230,7 @@ def main():
         assert unknown_effect["moveId"] is None and unknown_effect["moveName"] is None
         assert unknown_effect["rawEffectId"] == "0xEA7E03E8"
         assert unknown_effect["rawEffectCode"] == 0xC
+        assert unknown_effect["moveLookupReason"] == "enemy-ai-index-unavailable"
         class FakeEnemyAI:
             def skill_names(self, unit_key):
                 assert unit_key == "mon-synthetic"
@@ -241,6 +251,21 @@ def main():
         assert enemy_move["name"] == "? Snow Breath"
         assert enemy_move["rawParam30"] == 0xC
         assert "provisional" in enemy_move["provenance"]
+        assert enemy_bridge.lookup_enemy_move_with_reason(
+            enemy_attack, observed_effect_descriptor(enemy_attack))[1] is None
+        missing_ai_attack = dict(enemy_attack)
+        missing_ai_descriptor = bytearray.fromhex(enemy_attack["effect_descriptor_100"])
+        struct.pack_into("<I", missing_ai_descriptor, 0, (60050 << 16) | 1001)
+        missing_ai_attack["effect_descriptor_100"] = missing_ai_descriptor.hex()
+        assert enemy_bridge.lookup_enemy_move_with_reason(
+            missing_ai_attack, observed_effect_descriptor(missing_ai_attack))[1] == (
+                "enemy-ai-skill-id-absent")
+        ambiguous_enemy = LiveBridge(root / "ambiguous_enemy_move", "ambiguous.jsonl",
+                                     enemy_ai_index=FakeEnemyAI())
+        ambiguous_enemy.enemy_lookup["0x22"] = {"status": "ambiguous"}
+        assert ambiguous_enemy.lookup_enemy_move_with_reason(
+            enemy_attack, observed_effect_descriptor(enemy_attack))[1] == (
+                "enemy-unit-key-ambiguous")
         enemy_attack["source_actor_id"] = 60051
         assert enemy_bridge.lookup_enemy_move(
             enemy_attack, observed_effect_descriptor(enemy_attack)) is None

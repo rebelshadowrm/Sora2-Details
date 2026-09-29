@@ -96,7 +96,8 @@ public sealed class BreakdownWindow : Window
                         ? $"Source context +0x30: 0x{contextFlags:X}" : "Source context unavailable";
                     var targetStatus = effect.RawTargetStatus7C is { } status7C
                         ? $"Target status +0x7C: 0x{status7C:X}" : "Target status +0x7C unavailable";
-                    return new ListBoxItem { Content = label, ToolTip = $"{critical}\n{context}\n{targetStatus}\n{raw}\n{effectKey}\n{hp}" };
+                    var lookup = effect.MoveLookupReason is { } reason ? $"\nMove lookup: {reason}" : "";
+                    return new ListBoxItem { Content = label, ToolTip = $"{critical}\n{context}\n{targetStatus}\n{raw}\n{effectKey}\n{hp}{lookup}" };
                 }).ToArray();
             }
             else

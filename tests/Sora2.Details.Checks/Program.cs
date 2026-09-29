@@ -240,9 +240,12 @@ try
     catch (InvalidDataException) { historyCollisionRejected = true; }
     Check(historyCollisionRejected && store.LoadAll().Single().IsComplete,
         "restarted capture cannot overwrite a saved encounter ID");
-    store.Save(balmFight);
+    store.Save(balmFight with { Events = [balmFight.Events.Single() with {
+        MoveLookupReason = "hp-write-without-attack-result" }] });
     Check(store.LoadAll().Single(e => e.Id == "balm-check").Events.Single().ResolvedAmount == 1500,
         "resolved amount survives storage");
+    Check(store.LoadAll().Single(e => e.Id == "balm-check").Events.Single().MoveLookupReason ==
+        "hp-write-without-attack-result", "lookup reason survives storage");
     await recorder.RunAsync(new FixtureSource([
         new EncounterStarted("recorded-2", fight.StartedAt.AddMinutes(2), fight.Actors)
     ]), CancellationToken.None);

@@ -505,7 +505,8 @@ public partial class MainWindow : Window
                 $"Source context +0x30: {(hit.RawSourceContextFlags is { } contextFlags ? $"0x{contextFlags:X}" : "unavailable")}\n" +
                 $"Target status +0x7C: {(hit.RawTargetStatus7C is { } status7C ? $"0x{status7C:X}" : "unavailable")}\n" +
                 $"Raw effect: {hit.RawEffectId ?? "unavailable"}" +
-                (hit.RawEffectCode is { } code ? $" · code 0x{code:X}" : "");
+                (hit.RawEffectCode is { } code ? $" · code 0x{code:X}" : "") +
+                (hit.MoveLookupReason is { } reason ? $"\nMove lookup: {reason}" : "");
             var row = MeterDisplayRow.Breakdown($"hit:{hit.Sequence}", name, hit.EffectiveAmount ?? 0,
                 index, maximum, tooltip, theme: theme, icon: icon);
             return amounts.Overkill is > 0

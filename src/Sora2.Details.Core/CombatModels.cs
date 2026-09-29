@@ -31,7 +31,8 @@ public sealed record CombatEvent(
     string? RawEffectId = null,
     int? RawEffectCode = null,
     int? RawSourceContextFlags = null,
-    int? RawTargetStatus7C = null);
+    int? RawTargetStatus7C = null,
+    string? MoveLookupReason = null);
 
 public sealed record DamageAmounts(int? Total, int? Effective, int? Overkill)
 {

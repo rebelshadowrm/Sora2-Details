@@ -86,31 +86,47 @@ def observed_effect_descriptor(attack):
             "rawParam30": struct.unpack_from("<I", descriptor, 0x30)[0]}
 
 
-def lookup_live_move(attack, skill_rows_by_id):
+def lookup_live_move_with_reason(attack, skill_rows_by_id):
     """Join a captured effect descriptor to one exact English SkillParam row.
 
     The descriptor's first word and three unchanged raw parameters matched two
     independently reported Estelle Crafts. An absent or nonmatching descriptor
     must not be turned into a guessed move name.
     """
+    if not attack.get("effect_descriptor_100"):
+        return None, "effect-descriptor-missing"
     observed = observed_effect_descriptor(attack)
-    if observed is None or not skill_rows_by_id:
-        return None
+    if observed is None:
+        return None, "effect-descriptor-invalid"
+    if not skill_rows_by_id:
+        return None, "skill-table-unavailable"
     descriptor = observed["bytes"]
     packed_id = struct.unpack_from("<I", descriptor, 0)[0]
     candidates = skill_rows_by_id.get(packed_id, ())
+    if not candidates:
+        return None, "skill-id-absent"
     matches = [row for row in candidates
                if all(struct.unpack_from("<I", descriptor, offset)[0] == row[f"rawParam{offset:02x}"]
                       for offset in (0x10, 0x20, 0x30))]
+    if not matches:
+        return None, "skill-parameters-mismatch"
     source_id = attack.get("source_actor_id")
     if isinstance(source_id, int) and 0 <= source_id < 1000:
         matches = [row for row in matches if row["ownerId"] in (source_id, 65535)]
-    if len(matches) != 1 or not matches[0]["name"]:
-        return None
+        if not matches:
+            return None, "skill-owner-mismatch"
+    if len(matches) != 1:
+        return None, "skill-row-ambiguous"
+    if not matches[0]["name"]:
+        return None, "skill-name-missing"
     row = matches[0]
-    return {"id": f"0x{packed_id:08X}", "name": row["name"],
-            "rawParam30": row["rawParam30"],
-            "provenance": "live-effect-descriptor/exact-English-t_skill"}
+    return ({"id": f"0x{packed_id:08X}", "name": row["name"],
+             "rawParam30": row["rawParam30"],
+             "provenance": "live-effect-descriptor/exact-English-t_skill"}, None)
+
+
+def lookup_live_move(attack, skill_rows_by_id):
+    return lookup_live_move_with_reason(attack, skill_rows_by_id)[0]
 
 
 class LiveBridge:
@@ -137,26 +153,39 @@ class LiveBridge:
         self.pending_wipe = None
         self.observed_party_hp = {}
 
-    def lookup_enemy_move(self, attack, raw_effect):
+    def lookup_enemy_move_with_reason(self, attack, raw_effect):
         """Use a uniquely matched enemy unit key to select its own AI script."""
-        if self.enemy_ai_index is None or raw_effect is None:
-            return None
+        if raw_effect is None:
+            return None, ("effect-descriptor-missing" if not attack.get("effect_descriptor_100")
+                          else "effect-descriptor-invalid")
+        if self.enemy_ai_index is None:
+            return None, "enemy-ai-index-unavailable"
         source_id = attack.get("source_actor_id")
         source_ptr = attack.get("source_status_ptr")
-        if not isinstance(source_id, int) or source_id < 60000 or not source_ptr:
-            return None
+        if not isinstance(source_id, int) or source_id < 60000:
+            return None, "enemy-source-id-missing"
+        if not source_ptr:
+            return None, "enemy-source-pointer-missing"
         packed_id = int(raw_effect["id"], 16)
         if packed_id >> 16 != source_id:
-            return None
+            return None, "effect-owner-mismatch"
         matched_enemy = self.enemy_names.get(source_ptr)
-        if not matched_enemy or matched_enemy["numericId"] != source_id:
-            return None
+        if not matched_enemy:
+            status = self.enemy_lookup.get(source_ptr, {}).get("status", "unobserved")
+            return None, f"enemy-unit-key-{status}"
+        if matched_enemy["numericId"] != source_id:
+            return None, "enemy-status-id-mismatch"
         names = self.enemy_ai_index.skill_names(matched_enemy["unitId"]).get(packed_id & 0xFFFF, [])
+        if not names:
+            return None, "enemy-ai-skill-id-absent"
         if len(names) != 1:
-            return None
-        return {"id": raw_effect["id"], "name": f"? {names[0]}",
-                "rawParam30": raw_effect["rawParam30"],
-                "provenance": "live-effect-ID/provisional-stat-signature/exact-English-enemy-AI"}
+            return None, "enemy-ai-skill-id-ambiguous"
+        return ({"id": raw_effect["id"], "name": f"? {names[0]}",
+                 "rawParam30": raw_effect["rawParam30"],
+                 "provenance": "live-effect-ID/provisional-stat-signature/exact-English-enemy-AI"}, None)
+
+    def lookup_enemy_move(self, attack, raw_effect):
+        return self.lookup_enemy_move_with_reason(attack, raw_effect)[0]
 
     @staticmethod
     def actor_key(pointer):
@@ -489,7 +518,7 @@ class LiveBridge:
     def add_effect(self, record, kind, source, target, amount, before, after,
                    resolved=None, move=None, move_name=None, raw_result_flags=None,
                    raw_effect=None, raw_source_context_flags=None,
-                   raw_target_status_7c=None):
+                   raw_target_status_7c=None, move_lookup_reason=None):
         if self.current is None or target is None:
             return
         events = self.current["events"]
@@ -508,6 +537,7 @@ class LiveBridge:
             "moveId": move["id"] if move else None,
             "moveName": move["name"] if move else move_name,
             "moveNameProvenance": move["provenance"] if move else None,
+            "moveLookupReason": move_lookup_reason,
             "moveRawParam30": move["rawParam30"] if move else None,
             "rawEffectId": raw_effect["id"] if raw_effect else None,
             "rawEffectCode": raw_effect["rawParam30"] if raw_effect else None,
@@ -533,6 +563,7 @@ class LiveBridge:
                     "moveId": move["id"] if move else None,
                     "moveName": move["name"] if move else None,
                     "moveNameProvenance": move["provenance"] if move else None,
+                    "moveLookupReason": move_lookup_reason,
                     "moveRawParam30": move["rawParam30"] if move else None,
                     "rawEffectId": raw_effect["id"] if raw_effect else None,
                     "rawEffectCode": raw_effect["rawParam30"] if raw_effect else None,
@@ -569,18 +600,19 @@ class LiveBridge:
                 amount = None
             kind = "Damage" if before > after or amount else "Unknown"
             raw_effect = observed_effect_descriptor(attack)
-            move = lookup_live_move(attack, self.skill_lookup)
+            move, move_lookup_reason = lookup_live_move_with_reason(attack, self.skill_lookup)
             if move is None:
-                move = self.lookup_enemy_move(attack, raw_effect)
-            if move is None and raw_effect is not None:
-                self.issue("A captured effect descriptor did not uniquely match the exact English skill table.")
+                source_id = attack.get("source_actor_id")
+                if isinstance(source_id, int) and source_id >= 60000:
+                    move, move_lookup_reason = self.lookup_enemy_move_with_reason(attack, raw_effect)
             self.add_effect(record, kind, source, target,
                             before - after if kind == "Damage" else None,
                             before, after, resolved=amount, move=move,
                             raw_effect=raw_effect,
                             raw_result_flags=attack.get("candidate_result_flags"),
                             raw_source_context_flags=source_context_flags(attack),
-                            raw_target_status_7c=target_status_7c(attack))
+                            raw_target_status_7c=target_status_7c(attack),
+                            move_lookup_reason=move_lookup_reason)
             return
         if attack is not None:
             self.issue("An unrelated HP write occurred while an attack result was pending; the attack remains pending.")
@@ -588,7 +620,8 @@ class LiveBridge:
         kind = "Healing" if after > before else "HpLoss" if after < before else "Unknown"
         amount = abs(after - before) if kind != "Unknown" else None
         self.add_effect(record, kind, None, target, amount, before, after,
-                        move_name="Unattributed HP write")
+                        move_name="Unattributed HP write",
+                        move_lookup_reason="hp-write-without-attack-result")
 
     def handle(self, record):
         if record.get("kind") == "hit":
