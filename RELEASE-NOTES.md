@@ -4,11 +4,20 @@
 
 See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status, roles, privacy and network behavior, build provenance, and capture security. This Windows preview is unsigned while SignPath Foundation approval and configuration are pending. See [uninstall instructions](README.md#uninstall) in the project README.
 
+## Resident tray lifecycle
+
+- Sora 2 Details requests administrator approval once at startup and remains resident in the system tray as the capture owner. CaptureHost, Python, the bridge, and the updater inherit its approved process token.
+- A game already running at startup starts capture after approval. If Trails starts later, the tray notification offers **Start capture?** and waits for the player to choose Start; game exit detaches helpers and returns to a waiting tray state.
+- Closing or minimizing the meter hides it to the tray. Tray commands show or hide the meter, start or stop capture, open saved history and settings, restore interaction after click-through, and explicitly exit the application.
+- An update during capture explains the detach and restart, waits for confirmed helper cleanup, then updates and restarts with the launch arguments and data directory preserved.
+- Production no longer fills an empty meter with sample replay rows. Saved history remains available from the tray when no live session is active.
+
 ## Capture improvements in preview 13
 
 - Encounter history can focus on boss and unclassified fights, while preserving marked regular fights under All fights. Candidate labels remain cautious; manual Boss and Regular marks are available and persist across app updates.
-- Before the first elevation, the app explains the branded Sora 2 Details Capture helper's read-only purpose, the partial capture scope, and that declining keeps the meter available. The explanation is remembered across updates; new capture sessions can still request Windows approval.
-- New installer builds elevate the branded capture helper with a meter icon instead of Python. The meter and updater retain normal permissions.
+- The app explains the live-capture requirement and requests Windows administrator approval at startup, before the main meter appears. The capture host, Python probe, bridge, and updater inherit the approved process context without separate prompts.
+- Standard-user-first probing is available only through the explicit diagnostic switch. Normal release startup does not wait for a later process-access error before elevation.
+- Update installation now confirms before stopping active capture, waits for a clean detach, and restarts through the existing elevated process chain.
 - Installer builds support release signing and a `-RequireSigning` gate. This preview is unsigned, so Windows may show Unknown publisher or SmartScreen warnings.
 - Added packaging/readiness checks and a distribution UX audit. Interactive UAC and installed update validation were not available in the build environment.
 
@@ -23,11 +32,11 @@ See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status
 
 This Windows preview provides a compact meter and durable **partial** command-battle combat log. It records observed HP changes and some attributed damaging hits; support actions, misses, some move names, and critical status remain incomplete. It is not yet a complete combat log.
 
-The installer bundles the .NET app and Python 3.13.15, so no separate runtime install is needed.
+The installer bundles the .NET app and Python 3.13.15, so no separate runtime install is needed. Run `tools/start_probe_session.ps1 -TryUnprivileged` from a standard-user shell only for diagnostic access checks.
 
-Start the supported game, then open the meter. It automatically starts a 12-hour read-only command-battle capture and requests Windows administrator approval. Click **■** to detach early or **●** to retry capture. Start capture before entering a command battle; an already-open fight cannot be reconstructed. The meter displays saved encounters when the game is closed.
+Start the supported game, then open the meter. It requests administrator approval at startup before the main UI appears, then automatically starts a 12-hour command-battle capture in that elevated process session. Click **■** to detach early or **●** to retry capture. Start capture before entering a command battle; an already-open fight cannot be reconstructed. The meter displays saved encounters when the game is closed.
 
-The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
+The **↻** control checks GitHub for newer previews; **↑** downloads one; if capture is active, a confirmation explains that the app will detach and restart. The updater reuses the startup-approved process session without a second prompt. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
 
 ## Earlier preview changes
 

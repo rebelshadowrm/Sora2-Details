@@ -1,8 +1,11 @@
-"""One-elevation, time-limited launcher for fixed read-only Sora 2 probes.
+"""Time-limited launcher for fixed Sora 2 probes.
 
 The service stays idle between requests and never holds a game handle while
 idle. Requests use an ignored workspace queue; only fixed, hash-gated probe
-scripts are callable. Start it elevated once for a planned test session.
+scripts are callable. The production app starts elevated before its UI and
+launches this service and its probe children with the inherited token.
+Standard-user access is available only through the explicit diagnostic
+launcher switch; the production path never retries after an access-denied result.
 """
 
 import argparse
@@ -252,8 +255,15 @@ def run_fixed(request, pid, request_id):
 
 
 def serve(args):
-    verify_target(args.pid)
     session_dir = args.session_dir.resolve()
+    session_dir.mkdir(parents=True, exist_ok=True)
+    startup_error = session_dir / "startup-error.json"
+    startup_error.unlink(missing_ok=True)
+    try:
+        verify_target(args.pid)
+    except Exception as error:
+        atomic_json(startup_error, {"targetPid": args.pid, "error": str(error)})
+        raise
     requests = session_dir / "requests"
     results = session_dir / "results"
     requests.mkdir(parents=True, exist_ok=True)
@@ -296,7 +306,8 @@ def serve(args):
         current = json.loads(ready.read_text(encoding="utf-8")) if ready.exists() else {}
         if current.get("sessionId") == session_id:
             atomic_json(ready, {"sessionId": session_id, "stopped": True,
-                                "targetPid": args.pid, "serverPid": os.getpid()})
+                                "targetPid": args.pid, "serverPid": os.getpid(),
+                                "hostPid": int(os.environ.get("SORA2_DETAILS_HOST_PID", "0"))})
 
 
 def send(args):

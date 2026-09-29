@@ -119,9 +119,9 @@
                 <Button x:Name="UpdateButton" Grid.Column="5" Style="{StaticResource ChromeButton}" Content="↻"
                         ToolTip="Check for updates" Click="UpdateButton_Click" />
                 <Button Grid.Column="6" Style="{StaticResource ChromeButton}" Content="─"
-                        ToolTip="Minimize" Click="MinimizeButton_Click" />
+                        ToolTip="Hide meter to tray" Click="MinimizeButton_Click" />
                 <Button Grid.Column="7" Style="{StaticResource ChromeButton}" Content="×"
-                        FontSize="17" ToolTip="Close" Click="CloseButton_Click" />
+                        FontSize="17" ToolTip="Hide meter to tray" Click="CloseButton_Click" />
             </Grid>
 
             <Grid x:Name="EncounterHeader" Grid.Row="1" Background="#202226" Cursor="SizeAll"
@@ -137,7 +137,7 @@
                         Click="BackButton_Click" Visibility="Collapsed" />
                 <TextBlock x:Name="EncounterLabel" Grid.Column="1" Margin="6,3,5,0" Foreground="#BFC3C8"
                            TextTrimming="CharacterEllipsis" FontSize="11" />
-                <TextBlock x:Name="DataSourceLabel" Grid.Column="2" Margin="4,3,7,0" Text="SAMPLE" FontSize="10"
+                <TextBlock x:Name="DataSourceLabel" Grid.Column="2" Margin="4,3,7,0" Text="Waiting for game" FontSize="10"
                            Foreground="#E8BD69" FontWeight="Bold" Cursor="Hand"
                            MouseLeftButtonUp="CaptureStatus_Click" />
             </Grid>

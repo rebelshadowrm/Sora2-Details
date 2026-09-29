@@ -20,12 +20,34 @@ public partial class MainWindow
     private Forms.NotifyIcon? _trayIcon;
     private Forms.ContextMenuStrip? _trayMenu;
     private Forms.ToolStripMenuItem? _trayClickThrough;
+    private Forms.ToolStripMenuItem? _trayShowMeter;
+    private Forms.ToolStripMenuItem? _trayHideMeter;
+    private Forms.ToolStripMenuItem? _trayStartCapture;
+    private Forms.ToolStripMenuItem? _trayStopCapture;
+    private Forms.ToolStripMenuItem? _trayRestoreInteraction;
 
     private void InitializeWindowInteraction()
     {
         try
         {
             _trayMenu = new Forms.ContextMenuStrip();
+            _trayShowMeter = new Forms.ToolStripMenuItem("Show meter");
+            _trayShowMeter.Click += (_, _) => Dispatcher.BeginInvoke(ShowMeterFromTray);
+            _trayMenu.Items.Add(_trayShowMeter);
+            _trayHideMeter = new Forms.ToolStripMenuItem("Hide meter");
+            _trayHideMeter.Click += (_, _) => Dispatcher.BeginInvoke(HideMeterToTray);
+            _trayMenu.Items.Add(_trayHideMeter);
+            _trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            _trayStartCapture = new Forms.ToolStripMenuItem("Start/attach capture");
+            _trayStartCapture.Click += (_, _) => Dispatcher.BeginInvoke(StartCaptureFromTray);
+            _trayMenu.Items.Add(_trayStartCapture);
+            _trayStopCapture = new Forms.ToolStripMenuItem("Stop/detach capture");
+            _trayStopCapture.Click += (_, _) => Dispatcher.BeginInvoke(() => _ = StopCaptureAsync());
+            _trayMenu.Items.Add(_trayStopCapture);
+            _trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            var history = new Forms.ToolStripMenuItem("View previous logs/history");
+            history.Click += (_, _) => Dispatcher.BeginInvoke(OpenHistoryFromTray);
+            _trayMenu.Items.Add(history);
             _trayClickThrough = new Forms.ToolStripMenuItem("Click-through")
             {
                 CheckOnClick = false
@@ -33,9 +55,16 @@ public partial class MainWindow
             _trayClickThrough.Click += (_, _) => Dispatcher.BeginInvoke(() =>
                 SetDisplaySettings(_displaySettings with { ClickThrough = !_displaySettings.ClickThrough }));
             _trayMenu.Items.Add(_trayClickThrough);
-            var restore = new Forms.ToolStripMenuItem("Restore interaction and show meter");
-            restore.Click += (_, _) => Dispatcher.BeginInvoke(RestoreInteractionFromTray);
-            _trayMenu.Items.Add(restore);
+            _trayRestoreInteraction = new Forms.ToolStripMenuItem("Restore interaction / disable click-through");
+            _trayRestoreInteraction.Click += (_, _) => Dispatcher.BeginInvoke(RestoreInteractionFromTray);
+            _trayMenu.Items.Add(_trayRestoreInteraction);
+            var settings = new Forms.ToolStripMenuItem("Settings");
+            settings.Click += (_, _) => Dispatcher.BeginInvoke(OpenSettingsFromTray);
+            _trayMenu.Items.Add(settings);
+            _trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            var exit = new Forms.ToolStripMenuItem("Exit Sora 2 Details");
+            exit.Click += (_, _) => Dispatcher.BeginInvoke(RequestFullExit);
+            _trayMenu.Items.Add(exit);
             _trayIcon = new Forms.NotifyIcon
             {
                 Icon = System.Drawing.SystemIcons.Application,
@@ -43,7 +72,8 @@ public partial class MainWindow
                 ContextMenuStrip = _trayMenu,
                 Visible = true
             };
-            _trayIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(RestoreInteractionFromTray);
+            _trayIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(ShowMeterFromTray);
+            _trayIcon.BalloonTipClicked += (_, _) => Dispatcher.BeginInvoke(StartCaptureFromTray);
             ApplyWindowAppearance();
             UpdateTrayState();
         }
@@ -64,19 +94,89 @@ public partial class MainWindow
     {
         if (_displaySettings.ClickThrough)
             SetDisplaySettings(_displaySettings with { ClickThrough = false });
+        ShowMeterFromTray();
+    }
+
+    private void ShowMeterFromTray()
+    {
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Show();
         Activate();
+    }
+
+    private void HideMeterToTray()
+    {
+        if (_trayIcon?.Visible == true)
+        {
+            Hide();
+            return;
+        }
+        if (WindowState != WindowState.Minimized) WindowState = WindowState.Minimized;
+    }
+
+    private void ShowGameDetectedNotification()
+    {
+        if (_trayIcon?.Visible != true) return;
+        _trayIcon.ShowBalloonTip(8000, "Trails detected — Start capture?",
+            "Click this notification or choose Start/attach capture from the Sora 2 Details tray menu.",
+            Forms.ToolTipIcon.Info);
+    }
+
+    private void StartCaptureFromTray()
+    {
+        ShowMeterFromTray();
+        _ = StartCaptureAsync(_currentGamePid);
+    }
+
+    private void OpenHistoryFromTray()
+    {
+        ShowMeterFromTray();
+        if (_encounters.Count == 0)
+        {
+            MessageBox.Show(this, "No saved encounters are available yet.", "Sora 2 Details history",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var history = new HistoryWindow(_encounters, _historySettings) { Owner = this };
+        if (history.ShowDialog() == true)
+        {
+            _followNewest = false;
+            SelectEncounter(history.SelectedEncounter);
+        }
+    }
+
+    private void OpenSettingsFromTray()
+    {
+        ShowMeterFromTray();
+        var menu = new System.Windows.Controls.ContextMenu();
+        menu.Items.Add(BuildDisplaySettingsMenu());
+        menu.PlacementTarget = HeaderDragArea;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
+    }
+
+    private void RefreshTrayCommands()
+    {
+        UpdateTrayState();
     }
 
     private void UpdateTrayState()
     {
         if (_trayClickThrough is not null)
             _trayClickThrough.Checked = _displaySettings.ClickThrough;
+        if (_trayRestoreInteraction is not null)
+            _trayRestoreInteraction.Enabled = _displaySettings.ClickThrough || !IsVisible;
+        if (_trayShowMeter is not null) _trayShowMeter.Enabled = !IsVisible;
+        if (_trayHideMeter is not null) _trayHideMeter.Enabled = IsVisible;
+        var pids = GetGamePids();
+        if (_trayStartCapture is not null)
+            _trayStartCapture.Enabled = pids.Length == 1 && !_researchMode && !_captureBusy && !_updateBusy && !CaptureMayBeActive();
+        if (_trayStopCapture is not null)
+            _trayStopCapture.Enabled = !_captureBusy && !_updateBusy && CaptureMayBeActive();
         if (_trayIcon is not null)
             _trayIcon.Text = _displaySettings.ClickThrough
-                ? "Sora 2 Details - click-through (double-click to restore)"
-                : "Sora 2 Details";
+                ? "Sora 2 Details - click-through; tray restores interaction"
+                : CaptureMayBeActive() ? "Sora 2 Details - capturing" : "Sora 2 Details - waiting in tray";
     }
 
     private void DisposeTray()
@@ -90,6 +190,11 @@ public partial class MainWindow
         _trayMenu?.Dispose();
         _trayMenu = null;
         _trayClickThrough = null;
+        _trayShowMeter = null;
+        _trayHideMeter = null;
+        _trayStartCapture = null;
+        _trayStopCapture = null;
+        _trayRestoreInteraction = null;
     }
 
     private void ApplyWindowAppearance()

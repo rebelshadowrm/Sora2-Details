@@ -15,7 +15,6 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _captureCancellation = new();
     private readonly Task _captureTask;
     private IReadOnlyList<Encounter> _encounters = [];
-    private bool _sampleMode = true;
     private readonly bool _researchMode;
     private string? _captureError;
     private Encounter? _selectedEncounter;
@@ -26,11 +25,17 @@ public partial class MainWindow : Window
     private string? _moveKey;
     private readonly DispatcherTimer _placementSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _captureStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly DispatcherTimer _gameDetectionTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private MeterDisplaySettings _displaySettings = MeterDisplaySettings.Load();
     private readonly EncounterHistorySettings _historySettings = EncounterHistorySettings.Load();
     private bool _placementReady;
     private bool _exitAfterDetach;
+    private bool _exitRequested;
     private bool _closeWhenReady;
+    private bool _gameExitDetachRunning;
+    private HashSet<int> _observedGamePids = [];
+    private readonly HashSet<int> _notifiedGamePids = [];
+    private int? _currentGamePid;
     private DateTimeOffset? _observedResetAt;
 
     public MainWindow()
@@ -67,18 +72,35 @@ public partial class MainWindow : Window
             RefreshCaptureButton();
             ReloadHistory();
             _captureStatusTimer.Start();
-            if (!_researchMode && ActiveTraceName() is null) await StartCaptureAsync();
+            _observedGamePids = GetGamePids().ToHashSet();
+            _notifiedGamePids.UnionWith(_observedGamePids);
+            _currentGamePid = _observedGamePids.Count == 1 ? _observedGamePids.Single() : null;
+            _gameDetectionTimer.Tick += GameDetectionTimer_Tick;
+            _gameDetectionTimer.Start();
+            if (!_researchMode && Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") != "1")
+            {
+                if (_observedGamePids.Count == 1)
+                    await StartCaptureAsync(_currentGamePid, startupAttach: true);
+                else if (_observedGamePids.Count == 0)
+                    HideMeterToTray();
+                else
+                    SetCaptureError("More than one supported game process is running. Close the extra process, then start capture from the tray.");
+            }
+            RefreshTrayCommands();
         };
         LocationChanged += (_, _) => QueuePlacementSave();
         SizeChanged += (_, _) => QueuePlacementSave();
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized) HideMeterToTray();
+        };
         Closing += MainWindow_Closing;
         var historyPath = System.IO.Path.Combine(MeterDataDirectory.PathName, "encounters");
         System.IO.Directory.CreateDirectory(historyPath);
         _store = new EncounterStore(historyPath);
-        var samplePath = System.IO.Path.Combine(AppContext.BaseDirectory, "samples", "command-battles.json");
         var researchPath = Environment.GetEnvironmentVariable("SORA2_DETAILS_RESEARCH_REPLAY");
         _researchMode = !string.IsNullOrWhiteSpace(researchPath);
-        _encounters = EncounterReplay.Load(_researchMode ? researchPath! : samplePath);
+        _encounters = _researchMode ? EncounterReplay.Load(researchPath!) : [];
         ReloadHistory();
         _historyWatcher = new FileSystemWatcher(historyPath, "*.json") { EnableRaisingEvents = true };
         _historyWatcher.Created += (_, _) => Dispatcher.BeginInvoke(ReloadHistory);
@@ -89,6 +111,7 @@ public partial class MainWindow : Window
         {
             DisposeTray();
             _captureStatusTimer.Stop();
+            _gameDetectionTimer.Stop();
             _placementSaveTimer.Stop();
             SavePlacement();
             _captureCancellation.Cancel();
@@ -100,7 +123,13 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        if (_exitAfterDetach || _researchMode || !CaptureMayBeActive() && !_captureBusy) return;
+        if (!_exitRequested)
+        {
+            e.Cancel = true;
+            HideMeterToTray();
+            return;
+        }
+        if (_exitAfterDetach || !File.Exists(CurrentCapturePath()) && !_captureBusy) return;
         e.Cancel = true;
         if (_captureBusy)
         {
@@ -118,7 +147,7 @@ public partial class MainWindow : Window
                 Close();
                 return;
             }
-            SetCaptureError("Capture did not detach within 30 seconds. The meter remains open. Try Stop again, or use Stop-Sora2Details.cmd.");
+            SetCaptureError("Capture did not fully detach within 30 seconds. Sora 2 Details will stay in the tray so cleanup can be retried.");
         }
         catch (Exception exception)
         {
@@ -131,15 +160,109 @@ public partial class MainWindow : Window
             _closeWhenReady = false;
             RefreshCaptureStatus();
         }
-        var exitAnyway = MessageBox.Show(this,
-            $"{_captureStatusError}\n\nExit anyway? The external probe may keep running. Choose No to leave the meter open and retry Stop.",
-            "Capture may still be running", MessageBoxButton.YesNo, MessageBoxImage.Warning,
-            MessageBoxResult.No);
-        if (exitAnyway == MessageBoxResult.Yes)
+        _exitRequested = false;
+        MessageBox.Show(this, _captureStatusError ?? "Capture cleanup could not be confirmed.",
+            "Sora 2 Details remains running", MessageBoxButton.OK, MessageBoxImage.Warning);
+        HideMeterToTray();
+    }
+
+    private async void GameDetectionTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_gameExitDetachRunning || _researchMode || _updateBusy) return;
+        var current = GetGamePids().ToHashSet();
+        _observedGamePids = current;
+        foreach (var exitedPid in _notifiedGamePids.Where(pid => !current.Contains(pid)).ToArray())
+            _notifiedGamePids.Remove(exitedPid);
+
+        var capturePid = CurrentCaptureTargetPid();
+        if (capturePid is null && CaptureMayBeActive()) capturePid = _currentGamePid;
+        if (capturePid is { } attachedPid && !current.Contains(attachedPid))
         {
-            _exitAfterDetach = true;
-            Close();
+            await DetachAfterGameExitAsync(attachedPid);
+            RefreshTrayCommands();
+            return;
         }
+
+        if (_currentGamePid is { } previousPid && !current.Contains(previousPid))
+        {
+            _currentGamePid = null;
+            _selectedEncounter = null;
+            _followNewest = true;
+            RenderMeter();
+            HideMeterToTray();
+        }
+
+        var newlyDetected = current.FirstOrDefault(pid => !_notifiedGamePids.Contains(pid));
+        if (newlyDetected != 0 && !CaptureMayBeActive() && !_captureBusy && !_updateBusy &&
+            Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") != "1")
+        {
+            _currentGamePid = newlyDetected;
+            _notifiedGamePids.Add(newlyDetected);
+            _captureStatusError = null;
+            ShowGameDetectedNotification();
+        }
+        RefreshTrayCommands();
+    }
+
+    private async Task DetachAfterGameExitAsync(int gamePid)
+    {
+        if (_gameExitDetachRunning || _captureBusy) return;
+        _gameExitDetachRunning = true;
+        _captureBusy = true;
+        _captureStopping = true;
+        RefreshCaptureStatus();
+        try
+        {
+            if (await EnsureCaptureDetachedAsync())
+            {
+                _captureStatusError = null;
+                _captureError = null;
+                _currentGamePid = null;
+                _selectedEncounter = null;
+                _followNewest = true;
+                ReloadHistory();
+                RenderMeter();
+                HideMeterToTray();
+            }
+            else
+            {
+                SetCaptureError($"The game (PID {gamePid}) exited, but capture cleanup is not confirmed. Sora 2 Details remains resident and will retry.");
+                if (_trayIcon?.Visible == true)
+                    _trayIcon.ShowBalloonTip(5000, "Capture cleanup pending",
+                        "Sora 2 Details is still waiting for the capture helpers to detach.",
+                        System.Windows.Forms.ToolTipIcon.Warning);
+            }
+        }
+        catch (Exception exception)
+        {
+            SetCaptureError($"The game exited, but capture cleanup failed: {exception.Message}");
+        }
+        finally
+        {
+            _captureStopping = false;
+            _captureBusy = false;
+            _gameExitDetachRunning = false;
+            RefreshCaptureStatus();
+            RefreshTrayCommands();
+            if (_closeWhenReady)
+            {
+                _closeWhenReady = false;
+                _ = Dispatcher.BeginInvoke(Close);
+            }
+        }
+    }
+
+    private void RequestFullExit()
+    {
+        if (_updateBusy)
+        {
+            ShowMeterFromTray();
+            MessageBox.Show(this, "Wait for the update to finish before exiting Sora 2 Details.",
+                "Update in progress", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _exitRequested = true;
+        Close();
     }
 
     private void QueuePlacementSave()
@@ -188,15 +311,11 @@ public partial class MainWindow : Window
         IReadOnlyList<Encounter> recorded;
         try { recorded = _store.LoadAll(); }
         catch (System.IO.IOException) { return; } // A writer may still be replacing a snapshot.
-        if (recorded.Count > 0)
-        {
-            _encounters = recorded;
-            _sampleMode = false;
-        }
+        _encounters = recorded;
         var activeTrace = ActiveTraceName();
         var newest = _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault();
         var resetAt = activeTrace is null ? null : ActiveSessionResetAt();
-        var current = activeTrace is null ? newest : _encounters.FirstOrDefault(e =>
+        var current = activeTrace is null ? null : _encounters.FirstOrDefault(e =>
             e.Issues?.Contains($"Raw trace: {activeTrace}") == true &&
             (resetAt is null || e.StartedAt > resetAt.Value));
         SelectEncounter(_followNewest ? current :
@@ -253,7 +372,9 @@ public partial class MainWindow : Window
             MeterRows.ItemsSource = null;
             BackButton.Visibility = Visibility.Collapsed;
             FooterLabel.Text = resetWaiting ? "Previous fight is in history · awaiting battle entry" :
-                waiting ? "Capture armed · enter a new command battle" : "No encounters";
+                waiting ? "Capture armed · enter a new command battle" :
+                CaptureMayBeActive() ? "No encounter yet · capture is waiting for a command battle" :
+                "Saved history is available from the tray";
             FooterLabel.ToolTip = waiting
                 ? "A battle already open when capture starts cannot be reconstructed. Open the encounter menu for saved fights."
                 : null;
@@ -601,6 +722,6 @@ public partial class MainWindow : Window
         if (e.ButtonState == MouseButtonState.Pressed) DragMove();
     }
 
-    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => HideMeterToTray();
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => HideMeterToTray();
 }

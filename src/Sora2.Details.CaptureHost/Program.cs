@@ -5,7 +5,8 @@ namespace Sora2.Details.CaptureHost;
 
 internal static class Program
 {
-    // Fixed packaged entry point, not a general elevated command runner.
+    // Fixed packaged child entry point, not a general elevated command runner.
+    // It inherits the app's startup-approved token and never self-elevates.
     private static int Main(string[] args)
     {
         var root = AppContext.BaseDirectory;

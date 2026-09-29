@@ -23,6 +23,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <StartupObject>Sora2.Details.Desktop.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
 </Project>

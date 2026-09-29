@@ -3,10 +3,47 @@ param(
     [switch]$MeterOnly,
     [switch]$CaptureOnly,
     [string]$GameDirectory,
-    [string]$PythonPath
+    [string]$PythonPath,
+    [string]$DataDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+$DataDirectory = if ($DataDirectory) { [IO.Path]::GetFullPath($DataDirectory) }
+    elseif ($env:SORA2_DETAILS_DATA_DIR) { [IO.Path]::GetFullPath($env:SORA2_DETAILS_DATA_DIR) }
+    else { Join-Path $env:LOCALAPPDATA 'Sora2 Details' }
+$env:SORA2_DETAILS_DATA_DIR = $DataDirectory
+
+function Quote-WindowsArgument([string]$Value) {
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+    $quoted = [System.Text.StringBuilder]::new()
+    $null = $quoted.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) { $backslashes++; continue }
+        if ($character -eq [char]34) {
+            $null = $quoted.Append(([string][char]92) * ($backslashes * 2 + 1)).Append('"')
+            $backslashes = 0
+            continue
+        }
+        $null = $quoted.Append(([string][char]92) * $backslashes).Append($character)
+        $backslashes = 0
+    }
+    $null = $quoted.Append(([string][char]92) * ($backslashes * 2)).Append('"')
+    return $quoted.ToString()
+}
+
+function Start-DesktopApplication([string]$Executable, [string]$WorkingDirectory, [string]$Arguments) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Executable
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.Arguments = $Arguments
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $process = [Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) { throw 'Could not start Sora 2 Details.' }
+    $process.Dispose()
+}
+
 $root = $PSScriptRoot
 $desktopExe = Join-Path $root 'Sora2.Details.Desktop.exe'
 if (-not (Test-Path -LiteralPath $desktopExe)) {
@@ -19,19 +56,39 @@ if (-not (Test-Path -LiteralPath $desktopExe)) {
     throw 'Desktop app is missing. Run tools\build_release.ps1 or build the solution in Release mode.'
 }
 
-$game = @(Get-Process -Name sora_2nd -ErrorAction SilentlyContinue)
-if ($CaptureOnly -and $game.Count -eq 0) { throw 'Start the game before beginning live capture.' }
-if ($MeterOnly -or $game.Count -eq 0) {
-    if (-not (Get-Process -Name 'Sora2.Details.Desktop' -ErrorAction SilentlyContinue)) {
-        Start-Process -FilePath $desktopExe -WorkingDirectory $root | Out-Null
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$isAdministrator = [Security.Principal.WindowsPrincipal]::new($identity).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdministrator) {
+    if ($CaptureOnly) {
+        throw 'Capture-only mode is an app child operation. Start Sora 2 Details normally so it can request startup approval once.'
     }
-    if ($game.Count -eq 0 -and -not $MeterOnly) {
-        Write-Output 'Game is not running. Opened the meter with saved encounters; run this launcher again after starting the game for live capture.'
+}
+
+if (-not $CaptureOnly) {
+    if (Get-Process -Name 'Sora2.Details.Desktop' -ErrorAction SilentlyContinue) {
+        Write-Output 'Sora 2 Details is already running. Use its tray and capture controls.'
+        exit 0
+    }
+    $appArguments = @('--data-dir', $DataDirectory, '--capture-hours', [string]$Hours)
+    if ($MeterOnly) { $appArguments += '--meter-only' }
+    if ($GameDirectory) { $appArguments += @('--game-directory', $GameDirectory) }
+    if ($PythonPath) { $appArguments += @('--python-path', $PythonPath) }
+    $argumentLine = ($appArguments | ForEach-Object { Quote-WindowsArgument ([string]$_) }) -join ' '
+    Start-DesktopApplication $desktopExe $root $argumentLine
+    if ((Get-Process -Name sora_2nd -ErrorAction SilentlyContinue).Count -eq 0 -and -not $MeterOnly) {
+        Write-Output 'Game is not running. Sora 2 Details will wait in the tray and notify you when Trails starts.'
     } else {
-        Write-Output 'Meter opened without live capture.'
+        Write-Output 'Opened Sora 2 Details. Startup approval is requested before the main meter becomes interactive.'
     }
     exit 0
 }
+
+if (-not $isAdministrator) {
+    throw 'Capture-only mode requires the elevated Sora 2 Details process.'
+}
+$game = @(Get-Process -Name sora_2nd -ErrorAction SilentlyContinue)
+if ($game.Count -eq 0) { throw 'Start the game before beginning live capture.' }
 if ($game.Count -ne 1) { throw "Expected one sora_2nd process; found $($game.Count)." }
 
 if (-not $GameDirectory) {

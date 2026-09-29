@@ -42,6 +42,20 @@ class HostReadinessTests(unittest.TestCase):
                 result = json.loads((directory / "results" / "abcdef.json").read_text())
                 self.assertTrue(result["stopping"])
 
+    def test_startup_access_denied_is_recorded_before_readiness(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            args = argparse.Namespace(session_dir=directory, pid=987, minutes=1)
+            with patch.object(session, "verify_target",
+                              side_effect=OSError(5, "OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)")):
+                with self.assertRaises(OSError):
+                    session.serve(args)
+            startup_error = json.loads((directory / "startup-error.json").read_text())
+            self.assertEqual(startup_error["targetPid"], 987)
+            self.assertIn("OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)",
+                          startup_error["error"])
+            self.assertFalse((directory / "ready.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

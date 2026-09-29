@@ -130,7 +130,11 @@ def main():
     if not (0 <= args.current_hp <= args.max_hp and args.max_hp > 0 and args.limit > 0
             and args.seconds > 0 and args.interval > 0):
         parser.error("HP must be between zero and max HP; limit must be positive.")
-    handle = kernel32.OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, False, args.pid)
+    access = PROCESS_VM_READ
+    if args.watch is None and not args.read:
+        # Only the full scan enumerates regions with VirtualQueryEx.
+        access |= PROCESS_QUERY_INFORMATION
+    handle = kernel32.OpenProcess(access, False, args.pid)
     if not handle:
         raise OSError(ct.get_last_error(), "OpenProcess failed")
     try:

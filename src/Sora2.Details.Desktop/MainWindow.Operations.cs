@@ -35,11 +35,12 @@ public partial class MainWindow
     {
         var active = CaptureMayBeActive();
         var missingBridge = active && ActiveTraceName() is null;
+        var gameRunning = GetGamePids().Length > 0;
         if (!_captureBusy) CaptureButton.Content = active ? "■" : "●";
         var state = _researchMode ? "Research" :
             _captureStatusError is not null || _captureError is not null || missingBridge ? "Error" :
             _captureStopping ? "Stopping" : _captureStarting ? "Starting" :
-            active ? "Capturing" : "Ready";
+            active ? "Capturing" : gameRunning ? "Ready" : "Waiting for game";
         DataSourceLabel.Text = state;
         DataSourceLabel.Foreground = state == "Error" ? Brushes.OrangeRed :
             state == "Capturing" ? Brushes.LightGreen : Brushes.Goldenrod;
@@ -47,13 +48,12 @@ public partial class MainWindow
             ? "The bridge is no longer running, but probe detachment is unconfirmed. Click ■ to request a clean stop."
             : state switch
         {
-            "Capturing" => "Live capture is running. Close the meter to stop and exit, or click ■ to stop.",
+            "Capturing" => "Live capture is running. Closing the meter keeps Sora 2 Details in the tray. Use Stop/detach capture or click ■ to stop.",
             "Stopping" => "Waiting for the external probe to detach.",
-            "Starting" => "Windows will ask to approve Sora 2 Details Capture for a read-only probe of the supported game process. Capture is partial; canceling leaves saved encounters available.",
+            "Starting" => "Sora 2 Details is starting capture inside the elevated session approved at application startup. Capture is partial.",
             "Research" => "Showing a research replay; no live capture is attached.",
-            _ => _sampleMode
-                ? "Sample replay is shown. Start the game, then click ● if capture did not start automatically."
-                : "Saved encounters are shown. Start the game, then click ● if capture did not start automatically."
+            "Ready" => "Trails in the Sky 2nd Chapter is running. Capture can be started from the meter or tray.",
+            _ => "Waiting for Trails in the Sky 2nd Chapter. Saved encounters remain available from the tray."
         });
         DataSourceLabel.ToolTip = $"Sora 2 Details {AppVersion}\n{state}: {detail}\nClick for details.";
     }
@@ -68,40 +68,54 @@ public partial class MainWindow
 
     private async void CaptureButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_captureBusy) return;
+        if (_captureBusy || _updateBusy) return;
         if (CaptureButton.Content?.ToString() == "■")
         {
-            _captureBusy = true;
-            _captureStopping = true;
-            CaptureButton.ToolTip = "Detaching capture...";
-            RefreshCaptureStatus();
-            try
-            {
-                var detached = await EnsureCaptureDetachedAsync();
-                CaptureButton.ToolTip = detached ? "Capture detached." : "Capture did not detach; try Stop-Sora2Details.cmd.";
-                if (detached)
-                {
-                    CaptureButton.Content = "●";
-                    _captureStatusError = null;
-                    ReloadHistory();
-                }
-                else SetCaptureError("Capture did not detach within 30 seconds. Try Stop again or use Stop-Sora2Details.cmd.");
-            }
-            catch (Exception exception) { SetCaptureError($"Stop failed: {exception.Message}"); }
-            finally
-            {
-                _captureBusy = false;
-                _captureStopping = false;
-                RefreshCaptureStatus();
-                if (_closeWhenReady) Close();
-            }
+            await StopCaptureAsync();
             return;
         }
         await StartCaptureAsync();
     }
 
-    private async Task StartCaptureAsync()
+    private async Task StopCaptureAsync()
     {
+        if (_captureBusy || _updateBusy) return;
+        _captureBusy = true;
+        _captureStopping = true;
+        CaptureButton.ToolTip = "Detaching capture...";
+        RefreshCaptureStatus();
+        try
+        {
+            var detached = await EnsureCaptureDetachedAsync();
+            CaptureButton.ToolTip = detached ? "Capture detached." : "Capture cleanup is still pending; Sora 2 Details remains resident.";
+            if (detached)
+            {
+                _captureStatusError = null;
+                _selectedEncounter = null;
+                _followNewest = true;
+                ReloadHistory();
+                RenderMeter();
+            }
+            else SetCaptureError("Capture did not fully detach within 30 seconds. Try Stop again after the helper exits.");
+        }
+        catch (Exception exception) { SetCaptureError($"Stop failed: {exception.Message}"); }
+        finally
+        {
+            _captureBusy = false;
+            _captureStopping = false;
+            RefreshCaptureStatus();
+            RefreshTrayCommands();
+            if (_closeWhenReady)
+            {
+                _closeWhenReady = false;
+                _ = Dispatcher.BeginInvoke(Close);
+            }
+        }
+    }
+
+    private async Task StartCaptureAsync(int? expectedPid = null, bool startupAttach = false)
+    {
+        if (_updateBusy) return;
         if (_captureBusy || ActiveTraceName() is not null) return;
         if (CaptureMayBeActive())
         {
@@ -117,6 +131,7 @@ public partial class MainWindow
         }
         var games = Process.GetProcessesByName("sora_2nd");
         string? gameDirectory;
+        var targetPid = 0;
         try
         {
             if (games.Length != 1)
@@ -125,6 +140,12 @@ public partial class MainWindow
                     ? "Start the game before beginning capture."
                     : "Capture needs exactly one running game process.";
                 if (games.Length > 1) SetCaptureError(CaptureButton.ToolTip.ToString()!);
+                return;
+            }
+            targetPid = games[0].Id;
+            if (expectedPid is { } expected && expected != targetPid)
+            {
+                SetCaptureError("The detected game process changed before capture could attach. Wait for the current process list, then try Start capture again.");
                 return;
             }
             gameDirectory = ResolveGameDirectory(games[0]);
@@ -151,15 +172,12 @@ public partial class MainWindow
             gameDirectory = Path.GetDirectoryName(picker.FileName);
         }
         if (gameDirectory is null) return;
-        if (!ExplainCaptureElevation())
-        {
-            CaptureButton.ToolTip = "Live capture was not started. The meter and saved encounters remain available.";
-            RefreshCaptureStatus();
-            return;
-        }
         _captureBusy = true;
         _captureStarting = true;
-        CaptureButton.ToolTip = "Windows will ask to approve Sora 2 Details Capture. It reads the supported game process for partial battle capture.";
+        _currentGamePid = targetPid;
+        CaptureButton.ToolTip = startupAttach
+            ? "Attaching to the game that was already running at startup. Debugger state is installed temporarily for observation."
+            : "Starting partial capture in the elevated session approved at application startup.";
         RefreshCaptureStatus();
         try
         {
@@ -174,6 +192,18 @@ public partial class MainWindow
             foreach (var argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher,
                          "-CaptureOnly", "-GameDirectory", gameDirectory })
                 start.ArgumentList.Add(argument);
+            if (int.TryParse(Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_HOURS"), out var hours) &&
+                hours is >= 2 and <= 12)
+            {
+                start.ArgumentList.Add("-Hours");
+                start.ArgumentList.Add(hours.ToString());
+            }
+            var pythonPath = Environment.GetEnvironmentVariable("SORA2_DETAILS_PYTHON_PATH");
+            if (!string.IsNullOrWhiteSpace(pythonPath))
+            {
+                start.ArgumentList.Add("-PythonPath");
+                start.ArgumentList.Add(pythonPath);
+            }
             using var process = Process.Start(start) ?? throw new IOException("PowerShell did not start.");
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
@@ -203,46 +233,39 @@ public partial class MainWindow
             _captureBusy = false;
             _captureStarting = false;
             RefreshCaptureStatus();
-            if (_closeWhenReady) Close();
+            RefreshTrayCommands();
+            if (_closeWhenReady)
+            {
+                _closeWhenReady = false;
+                _ = Dispatcher.BeginInvoke(Close);
+            }
         }
     }
 
-    private static bool ExplainCaptureElevation()
+    private static int[] GetGamePids()
     {
-        var dataDirectory = Path.GetDirectoryName(CurrentCapturePath()) is { } liveDirectory
-            ? Path.GetDirectoryName(liveDirectory) : null;
-        var noticePath = dataDirectory is null ? null : Path.Combine(dataDirectory, "capture-elevation-notice.txt");
+        Process[] processes;
+        try { processes = Process.GetProcessesByName("sora_2nd"); }
+        catch (System.ComponentModel.Win32Exception) { return []; }
         try
         {
-            if (noticePath is not null && File.Exists(noticePath)) return true;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
-
-        var answer = MessageBox.Show(
-            "Live capture uses Windows administrator approval.\n\n" +
-            "Sora 2 Details Capture reads the supported game process to record partial command-battle activity. " +
-            "The probe is read-only; it does not change game files or game state. The meter and saved history " +
-            "do not need administrator access.\n\n" +
-            "Continue to the standard Windows approval prompt? If you cancel, the meter remains available " +
-            "without live capture. This unsigned preview may show Unknown publisher in Windows.",
-            "Why live capture requests approval",
-            MessageBoxButton.YesNo, MessageBoxImage.Information);
-        if (answer != MessageBoxResult.Yes) return false;
-
-        if (noticePath is not null)
-        {
-            try
+            var ids = new List<int>(processes.Length);
+            foreach (var process in processes)
             {
-                Directory.CreateDirectory(dataDirectory!);
-                File.WriteAllText(noticePath, "Shown once before live capture elevation.\n");
+                try { ids.Add(process.Id); }
+                catch (InvalidOperationException) { }
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            return ids.ToArray();
         }
-        return true;
+        finally { foreach (var process in processes) process.Dispose(); }
     }
 
     private static string? ResolveGameDirectory(Process game)
     {
+        var configuredDirectory = Environment.GetEnvironmentVariable("SORA2_DETAILS_GAME_DIRECTORY");
+        if (!string.IsNullOrWhiteSpace(configuredDirectory) &&
+            File.Exists(Path.Combine(configuredDirectory, "sora_2nd.exe")))
+            return configuredDirectory;
         try
         {
             var runningExe = game.MainModule?.FileName;
@@ -252,7 +275,7 @@ public partial class MainWindow
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or
                                            InvalidOperationException or UnauthorizedAccessException)
         {
-            // Windows may hide the executable path until the probe is elevated.
+            // Use a saved path or ask the player if Windows still hides this process path.
         }
         var saved = ReadGameDirectory();
         if (saved is not null) return saved;
@@ -314,7 +337,7 @@ public partial class MainWindow
             UpdateButton.Content = _availableUpdate is null ? "↻" : "↑";
             UpdateButton.ToolTip = _availableUpdate is null
                 ? "No newer preview release found; click to check again."
-                : "New preview available. Click to download and restart after capture detaches.";
+                : "New preview available. Click again to update after confirming capture will stop and the app will restart.";
         }
         catch (Exception exception)
         {
@@ -324,7 +347,11 @@ public partial class MainWindow
 
     private async void UpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_updateBusy) return;
+        if (_captureBusy || _updateBusy)
+        {
+            UpdateButton.ToolTip = "Wait for capture or another update operation to finish before updating.";
+            return;
+        }
         _updateBusy = true;
         UpdateButton.IsEnabled = false;
         try
@@ -335,16 +362,29 @@ public partial class MainWindow
                 return;
             }
             if (_availableUpdate is null || _updateManager is null) return;
-            UpdateButton.ToolTip = "Downloading verified update package...";
-            await _updateManager.DownloadUpdatesAsync(_availableUpdate);
+            var captureActive = CaptureMayBeActive();
+            if (captureActive)
+            {
+                var answer = MessageBox.Show(this,
+                    "Updating now will stop live capture, detach from the game, install the update, and restart Sora 2 Details. " +
+                    "If Trails is still running, capture will start again after restart. " +
+                    "You can wait until the current battle is over. The updater will reuse the startup-approved elevated session and will not ask for separate approval.\n\n" +
+                    "Update now?",
+                    "Update Sora 2 Details", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                    MessageBoxResult.No);
+                if (answer != MessageBoxResult.Yes) return;
+            }
             UpdateButton.ToolTip = "Waiting for capture to detach...";
             if (!await EnsureCaptureDetachedAsync())
             {
-                UpdateButton.ToolTip = "Update downloaded, but capture did not detach. Stop capture and try again.";
+                UpdateButton.ToolTip = "Capture cleanup could not be confirmed. The update was not installed.";
                 SetCaptureError(UpdateButton.ToolTip.ToString()!);
                 return;
             }
-            _updateManager.ApplyUpdatesAndRestart(_availableUpdate);
+            UpdateButton.ToolTip = "Downloading verified update package...";
+            await _updateManager.DownloadUpdatesAsync(_availableUpdate);
+            _updateManager.ApplyUpdatesAndRestart(_availableUpdate,
+                BuildRestartArguments());
         }
         catch (Exception exception)
         {
@@ -357,6 +397,23 @@ public partial class MainWindow
         }
     }
 
+    private static string[] BuildRestartArguments()
+    {
+        var arguments = new List<string> { "--data-dir", MeterDataDirectory.PathName };
+        var hours = Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_HOURS");
+        if (int.TryParse(hours, out var captureHours) && captureHours is >= 2 and <= 12)
+            arguments.AddRange(["--capture-hours", captureHours.ToString()]);
+        var gameDirectory = Environment.GetEnvironmentVariable("SORA2_DETAILS_GAME_DIRECTORY");
+        if (!string.IsNullOrWhiteSpace(gameDirectory))
+            arguments.AddRange(["--game-directory", gameDirectory]);
+        var pythonPath = Environment.GetEnvironmentVariable("SORA2_DETAILS_PYTHON_PATH");
+        if (!string.IsNullOrWhiteSpace(pythonPath))
+            arguments.AddRange(["--python-path", pythonPath]);
+        if (Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") == "1")
+            arguments.Add("--meter-only");
+        return arguments.ToArray();
+    }
+
     private static async Task<bool> EnsureCaptureDetachedAsync()
     {
         var currentPath = CurrentCapturePath();
@@ -367,15 +424,65 @@ public partial class MainWindow
         var trace = current.GetProperty("trace").GetString();
         var bridgePid = current.TryGetProperty("bridgePid", out var bridgeProperty)
             ? bridgeProperty.GetInt32() : 0;
+        var serverPid = current.TryGetProperty("serverPid", out var serverProperty)
+            ? serverProperty.GetInt32() : 0;
+        var hostPid = current.TryGetProperty("hostPid", out var hostProperty)
+            ? hostProperty.GetInt32() : 0;
+        var sessionId = current.TryGetProperty("sessionId", out var sessionProperty)
+            ? sessionProperty.GetString() : null;
+        var requestId = current.TryGetProperty("requestId", out var requestProperty)
+            ? requestProperty.GetString() : null;
         if (string.IsNullOrWhiteSpace(stopFile) || string.IsNullOrWhiteSpace(trace)) return false;
         Directory.CreateDirectory(Path.GetDirectoryName(stopFile)!);
-        await File.WriteAllTextAsync(stopFile, "stop", Encoding.ASCII);
+        try { await File.WriteAllTextAsync(stopFile, "stop", Encoding.ASCII); }
+        catch (IOException) when (TraceShowsDetach(trace)) { }
         for (var attempt = 0; attempt < 150; attempt++)
         {
-            if (TraceShowsDetach(trace) && !IsProcessRunning(bridgePid)) return true;
+            var safelyFinished = TraceShowsDetach(trace) || ProbeFailedBeforeAttach(requestId, trace);
+            if (safelyFinished && !IsProcessRunning(bridgePid) &&
+                !IsProcessRunning(serverPid) && !IsProcessRunning(hostPid))
+            {
+                if (!TryDelete(currentPath)) return false;
+                TryDelete(stopFile);
+                DeleteReadyRecord(sessionId);
+                return true;
+            }
             await Task.Delay(200);
         }
         return false;
+    }
+
+    private static bool TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return !File.Exists(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return !File.Exists(path);
+        }
+    }
+
+    private static void DeleteReadyRecord(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        try
+        {
+            var readyPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(CurrentCapturePath())!, "..",
+                "probe-session", "ready.json"));
+            if (!File.Exists(readyPath)) return;
+            using var ready = JsonDocument.Parse(File.ReadAllText(readyPath));
+            if (ready.RootElement.TryGetProperty("sessionId", out var id) &&
+                id.GetString() == sessionId && ready.RootElement.TryGetProperty("stopped", out var stopped) &&
+                stopped.GetBoolean())
+                TryDelete(readyPath);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // The next launch validates the PID/session record before reuse.
+        }
     }
 
     private static bool IsProcessRunning(int pid)
@@ -406,12 +513,55 @@ public partial class MainWindow
             if (!File.Exists(path)) return false;
             using var json = JsonDocument.Parse(File.ReadAllText(path));
             var trace = json.RootElement.GetProperty("trace").GetString();
-            return !string.IsNullOrWhiteSpace(trace) && !TraceShowsDetach(trace);
+            var bridgePid = json.RootElement.TryGetProperty("bridgePid", out var bridge)
+                ? bridge.GetInt32() : 0;
+            var serverPid = json.RootElement.TryGetProperty("serverPid", out var server)
+                ? server.GetInt32() : 0;
+            var hostPid = json.RootElement.TryGetProperty("hostPid", out var host)
+                ? host.GetInt32() : 0;
+            var requestId = json.RootElement.TryGetProperty("requestId", out var request)
+                ? request.GetString() : null;
+            var safelyFinished = TraceShowsDetach(trace ?? "") || ProbeFailedBeforeAttach(requestId, trace ?? "");
+            return !string.IsNullOrWhiteSpace(trace) &&
+                (!safelyFinished || IsProcessRunning(bridgePid) ||
+                 IsProcessRunning(serverPid) || IsProcessRunning(hostPid));
         }
         catch (Exception exception) when (exception is IOException or JsonException or InvalidOperationException or
                                         UnauthorizedAccessException or KeyNotFoundException)
         {
             return File.Exists(CurrentCapturePath());
+        }
+    }
+
+    private static bool ProbeFailedBeforeAttach(string? requestId, string tracePath)
+    {
+        if (string.IsNullOrWhiteSpace(requestId) || File.Exists(tracePath)) return false;
+        try
+        {
+            var resultsPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(CurrentCapturePath())!, "..",
+                "probe-session", "results", requestId + ".json"));
+            if (!File.Exists(resultsPath)) return false;
+            using var result = JsonDocument.Parse(File.ReadAllText(resultsPath));
+            return result.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static int? CurrentCaptureTargetPid()
+    {
+        try
+        {
+            var path = CurrentCapturePath();
+            if (!File.Exists(path)) return null;
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            return json.RootElement.TryGetProperty("targetPid", out var pid) ? pid.GetInt32() : null;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return null;
         }
     }
 

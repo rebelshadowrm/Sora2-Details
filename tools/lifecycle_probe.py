@@ -27,6 +27,7 @@ if sys.platform != "win32" or ct.sizeof(ct.c_void_p) != 8:
 
 kernel32 = ct.WinDLL("kernel32", use_last_error=True)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_VM_READ = 0x0010
 DBG_CONTINUE = 0x00010002
 DBG_EXCEPTION_NOT_HANDLED = 0x80010001
 EXCEPTION_DEBUG_EVENT = 1
@@ -190,7 +191,8 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
     threads = {}
     originals = {}
     module_base = None
-    process_handle = None
+    debug_process_handle = None
+    read_process_handle = None
     addresses = None
     attached = False
     installed = False
@@ -211,11 +213,11 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
     enemy_signatures = enemy_signatures or {}
 
     def read_bytes(address, count):
-        if process_handle is None:
+        if read_process_handle is None:
             return None
         buffer = ct.create_string_buffer(count)
         size = ct.c_size_t()
-        if not kernel32.ReadProcessMemory(process_handle, ct.c_void_p(address),
+        if not kernel32.ReadProcessMemory(read_process_handle, ct.c_void_p(address),
                                           buffer, count, ct.byref(size)) or size.value != count:
             return None
         return buffer.raw
@@ -263,12 +265,25 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
             emit("restore_error", details=failures)
         return not failures
 
-    checked(kernel32.DebugActiveProcess(pid), "DebugActiveProcess")
+    # Open the least-privilege memory handle before attaching so a denied read
+    # request cannot leave the game paused in an initial debug event.
+    read_process_handle = checked(
+        kernel32.OpenProcess(PROCESS_VM_READ, False, pid),
+        "OpenProcess(PROCESS_VM_READ)")
+    try:
+        checked(kernel32.DebugActiveProcess(pid), "DebugActiveProcess")
+    except Exception:
+        kernel32.CloseHandle(read_process_handle)
+        read_process_handle = None
+        raise
     attached = True
     try:
         checked(kernel32.DebugSetProcessKillOnExit(False), "DebugSetProcessKillOnExit")
     except OSError:
         kernel32.DebugActiveProcessStop(pid)
+        attached = False
+        kernel32.CloseHandle(read_process_handle)
+        read_process_handle = None
         raise
     emit("attached", pid=pid)
     deadline = time.monotonic() + seconds
@@ -279,8 +294,8 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
             if stop_file is not None and stop_file.exists():
                 deadline = time.monotonic()
             if time.monotonic() >= deadline and not stop_break_requested:
-                if process_handle and installed:
-                    checked(kernel32.DebugBreakProcess(process_handle), "DebugBreakProcess")
+                if debug_process_handle and installed:
+                    checked(kernel32.DebugBreakProcess(debug_process_handle), "DebugBreakProcess")
                     stop_break_requested = True
                 else:
                     break
@@ -292,7 +307,10 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                 raise OSError(error, "WaitForDebugEvent")
             status = DBG_CONTINUE
             if event.code == CREATE_PROCESS_DEBUG_EVENT:
-                process_handle = event_pointer(event, 8)
+                # DebugActiveProcess supplies a debugger process handle with both
+                # PROCESS_VM_READ and PROCESS_VM_WRITE. Keep it for debugger control;
+                # memory inspection uses the earlier PROCESS_VM_READ-only handle.
+                debug_process_handle = event_pointer(event, 8)
                 threads[event.tid] = event_pointer(event, 16)
                 module_base = event_pointer(event, 24)
                 addresses = ([(name, module_base + value if use_rvas else value)
@@ -314,7 +332,9 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                 if initial_break_seen and drain_until is None:
                     install(event.tid, handle)
             elif event.code == EXIT_THREAD_DEBUG_EVENT:
-                threads.pop(event.tid, None)
+                thread_handle = threads.pop(event.tid, None)
+                if thread_handle:
+                    kernel32.CloseHandle(thread_handle)
                 originals.pop(event.tid, None)
             elif event.code == EXIT_PROCESS_DEBUG_EVENT:
                 exited = True
@@ -606,18 +626,40 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
         if attached and not exited:
             if installed and not stop_break_seen:
                 # Fallback if the timed stop breakpoint could not be delivered.
-                clear_all()
+                if not clear_all():
+                    raise RuntimeError("Unable to restore every thread debug register")
             checked(kernel32.DebugActiveProcessStop(pid), "DebugActiveProcessStop")
             attached = False
             emit("detached")
     finally:
         if attached and not exited:
+            restored = False
             try:
-                clear_all()
-                kernel32.DebugActiveProcessStop(pid)
-                emit("detached_after_error")
+                restored = clear_all()
+            except Exception as error:
+                emit("restore_error", detail=str(error))
+            try:
+                if kernel32.DebugActiveProcessStop(pid):
+                    attached = False
+                    emit("detached_after_error" if restored else "detach_cleanup_error",
+                         detail=None if restored else "One or more thread debug registers could not be restored")
+                else:
+                    emit("detach_error", detail=f"DebugActiveProcessStop failed: {ct.get_last_error()}")
             except Exception as error:
                 emit("detach_error", detail=str(error))
+        elif exited:
+            # Windows removes the debugger association when the target exits.
+            attached = False
+        for thread_handle in threads.values():
+            if thread_handle:
+                kernel32.CloseHandle(thread_handle)
+        threads.clear()
+        if debug_process_handle:
+            kernel32.CloseHandle(debug_process_handle)
+            debug_process_handle = None
+        if read_process_handle:
+            kernel32.CloseHandle(read_process_handle)
+            read_process_handle = None
 
 
 def main():

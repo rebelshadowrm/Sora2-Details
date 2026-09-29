@@ -10,7 +10,6 @@ import lifecycle_probe as probe
 
 EXPECTED_SHA256 = "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"
 PROCESS_VM_READ = 0x10
-PROCESS_QUERY_INFORMATION = 0x400
 
 
 def read(handle, address, size):
@@ -48,8 +47,9 @@ def main():
     digest = probe.file_hash(path)
     if digest != EXPECTED_SHA256:
         raise SystemExit(f"Executable hash mismatch: {digest}")
-    handle = probe.kernel32.OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-                                         False, args.pid)
+    # This snapshot uses ReadProcessMemory only. image_path() separately asks
+    # for PROCESS_QUERY_LIMITED_INFORMATION to resolve the executable path.
+    handle = probe.kernel32.OpenProcess(PROCESS_VM_READ, False, args.pid)
     if not handle:
         raise OSError(ct.get_last_error(), "OpenProcess")
     try:
