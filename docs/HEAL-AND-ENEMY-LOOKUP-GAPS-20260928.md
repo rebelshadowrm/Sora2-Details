@@ -38,3 +38,22 @@ enemy, capture its displayed name and inspect its two saved candidate keys;
 seek a direct runtime unit key if both remain stat-identical. Any future
 source/move join needs a second independent live validation before enabling
 automatic attribution.
+
+The probe can retain extra evidence at the HP setter before its memory changes.
+For the first 16 positive HP writes per `BattleInit`, its raw JSONL record now
+includes a `diagnostic_snapshot` with 256 bytes around the current stack and
+frame, tagged `hp-write-without-attack-result`. This is a bounded research
+snapshot; stack words are candidate pointers, not verified healer or move IDs.
+Short live captures now retain the attack effect descriptor as well, so a later
+`effect-descriptor-missing` or table mismatch can be reviewed against the raw
+observation. If the descriptor itself cannot be read, the first eight such
+results per battle also retain the bounded 512-byte result frame at the hook.
+Enemy identity captures retain first-seen status/context and linked-object
+bytes for each battle. The hash-gated exact English table is now loaded before
+the probe attaches. If a live enemy signature matches zero or multiple unit
+keys, the probe records candidate keys and a wider, bounded context/link/actor
+snapshot while the attack breakpoint is paused (at most eight enemy pointers
+per battle). This preserves evidence for a direct runtime key search; it does
+not choose a name. A later bridge lookup result cannot safely request memory
+after the breakpoint has resumed. AI-skill-ID failures still need a separate
+action-context hypothesis before expanding their memory reads.

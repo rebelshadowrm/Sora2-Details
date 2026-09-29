@@ -4,10 +4,13 @@ import ctypes as ct
 import hashlib
 import json
 import os
+import struct
 import subprocess
 import sys
 import threading
 import time
+
+from lifecycle_probe import enemy_lookup_gap, enemy_signature_index
 
 
 def child():
@@ -44,6 +47,19 @@ def child():
 
 
 def parent():
+    row = {"unitId": "mon-test", "level": 54, "expBase": 301, "expGrowth": 0.0,
+           "ep": 1000, "defBase": 361, "defGrowth": 0.0,
+           "adfBase": 321, "adfGrowth": 0.0, "movBase": 6, "movGrowth": 0.0}
+    status = bytearray(0x2A0)
+    for offset, value in zip((0, 0x4, 0x8, 0x18, 0x28, 0x30, 0x40),
+                             (60050, 54, 301, 1000, 361, 321, 6)):
+        struct.pack_into("<I", status, offset, value)
+    assert enemy_lookup_gap(status, enemy_signature_index([row])) == (None, ["mon-test"])
+    assert enemy_lookup_gap(status, enemy_signature_index([row, dict(row, unitId="mon-other")])) == (
+        "enemy-unit-key-ambiguous", ["mon-test", "mon-other"])
+    assert enemy_lookup_gap(status, {}) == ("enemy-unit-key-missing", [])
+    struct.pack_into("<I", status, 0, 5)
+    assert enemy_lookup_gap(status, {}) == (None, [])
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     target = subprocess.Popen([sys.executable, __file__, "--child"],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,

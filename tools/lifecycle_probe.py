@@ -18,6 +18,9 @@ import struct
 import sys
 import time
 
+from match_enemy_status import status_signature, table_signature
+from status_name_index import read_rows as read_enemy_rows
+
 
 if sys.platform != "win32" or ct.sizeof(ct.c_void_p) != 8:
     raise SystemExit("This probe requires 64-bit Windows Python.")
@@ -158,12 +161,32 @@ def parse_named_address(value):
     return name, address
 
 
+def enemy_signature_index(rows):
+    index = {}
+    for row in rows:
+        index.setdefault(table_signature(row), []).append(row["unitId"])
+    return index
+
+
+def enemy_lookup_gap(status_bytes, signatures):
+    """Decide whether an exact, hash-gated table lookup needs more live evidence."""
+    if status_bytes is None or len(status_bytes) < 0x44:
+        return None, []
+    runtime_id = struct.unpack_from("<I", status_bytes)[0]
+    if runtime_id < 60000:
+        return None, []
+    candidates = signatures.get(status_signature(status_bytes), [])
+    if len(candidates) == 1:
+        return None, candidates
+    return ("enemy-unit-key-ambiguous" if candidates else "enemy-unit-key-missing"), candidates
+
+
 def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
           hp_set_names=(), effect_entry_names=(), attack_call_names=(),
           actor_bytes_names=(), actor_identity_names=(),
           result_frame_names=(), effect_descriptor_names=(), turn_context_names=(),
           result_entry_names=(), critical_popup_names=(),
-          stop_file=None):
+          stop_file=None, enemy_signatures=None):
     threads = {}
     originals = {}
     module_base = None
@@ -179,6 +202,13 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
     hit_count = 0
     prior_values = {}
     identity_seen = set()
+    heal_diagnostics = 0
+    heal_diagnostic_limit = 16  # Per battle; each read is bounded to 256 bytes.
+    descriptor_diagnostics = 0
+    descriptor_diagnostic_limit = 8
+    enemy_diagnostics = set()
+    enemy_diagnostic_limit = 8
+    enemy_signatures = enemy_signatures or {}
 
     def read_bytes(address, count):
         if process_handle is None:
@@ -328,6 +358,11 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                               r8=hex(ctx.r8), r9=hex(ctx.r9),
                                               rsi=hex(ctx.rsi), r12=hex(ctx.r12),
                                               r14=hex(ctx.r14), rdi=hex(ctx.rdi))
+                                if name == "BattleInit":
+                                    heal_diagnostics = 0
+                                    descriptor_diagnostics = 0
+                                    enemy_diagnostics.clear()
+                                    identity_seen.clear()
                                 if name in hp_set_names:
                                     # Preserve bounded frame evidence for later heal-path
                                     # research. This hook is inside the setter, so neither
@@ -345,6 +380,24 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                                                if hp_stack is not None else None),
                                                   hp_frame_return_candidate=(hex(frame_return)
                                                                              if frame_return is not None else None))
+                                    if (isinstance(fields["hp_before"], int)
+                                            and isinstance(fields["hp_max"], int)
+                                            and fields["hp_before"] < min(fields["hp_max"],
+                                                                          fields["requested_hp"])
+                                            and heal_diagnostics < heal_diagnostic_limit):
+                                        # A positive HP write cannot pair with the verified
+                                        # damaging result path. Read while this setter is paused;
+                                        # bridge-side lookup runs after the memory can change.
+                                        deep_stack = read_bytes(ctx.rsp, 256)
+                                        deep_frame = read_bytes(ctx.rbp - 0x80, 256)
+                                        fields["diagnostic_snapshot"] = {
+                                            "trigger": "hp-write-without-attack-result",
+                                            "stack_256": (deep_stack.hex() if deep_stack is not None else None),
+                                            "frame_base": hex(ctx.rbp - 0x80),
+                                            "frame_256": (deep_frame.hex() if deep_frame is not None else None),
+                                            "ordinal": heal_diagnostics + 1,
+                                            "limit_per_battle": heal_diagnostic_limit}
+                                        heal_diagnostics += 1
                                 if name in critical_popup_names:
                                     # Command-battle caller at RVA 0x116EE0 passes a
                                     # stack popup object in RDX. Its +0x78 enum is
@@ -438,6 +491,15 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                                                              if descriptor else None),
                                                       effect_descriptor_100=(raw.hex()
                                                                              if raw is not None else None))
+                                        if raw is None and descriptor_diagnostics < descriptor_diagnostic_limit:
+                                            frame = read_bytes(ctx.rbp - 0x100, 0x200)
+                                            fields["diagnostic_snapshot"] = {
+                                                "trigger": "effect-descriptor-missing",
+                                                "result_frame_base": hex(ctx.rbp - 0x100),
+                                                "result_frame_200": (frame.hex() if frame is not None else None),
+                                                "ordinal": descriptor_diagnostics + 1,
+                                                "limit_per_battle": descriptor_diagnostic_limit}
+                                            descriptor_diagnostics += 1
                                     if name in actor_bytes_names:
                                         for prefix, context_ptr, status_ptr in (
                                                 ("source", ctx.r12, source_status),
@@ -488,6 +550,35 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                                               "status_2a0": (status_data.hex()
                                                               if status_data is not None else None),
                                                               "links": links})
+                                            if (enemy_signatures and status_ptr not in enemy_diagnostics
+                                                    and len(enemy_diagnostics) < enemy_diagnostic_limit):
+                                                gap, candidates = enemy_lookup_gap(status_data, enemy_signatures)
+                                                if gap:
+                                                    # The first-seen snapshot has 0x600 context
+                                                    # and short links. Preserve a wider bounded
+                                                    # graph now, while these pointers are live.
+                                                    link_590 = read_u64(context_ptr + 0x590)
+                                                    link_bytes = (read_bytes(link_590 + 0x1C00, 0x400)
+                                                                  if link_590 else None)
+                                                    actor_ptr = (read_u64(link_590 + 0x1D88)
+                                                                 if link_590 else None)
+                                                    actor_bytes = (read_bytes(actor_ptr, 0x400)
+                                                                   if actor_ptr else None)
+                                                    wide_context = read_bytes(context_ptr, 0x1000)
+                                                    snapshots[-1]["diagnostic_snapshot"] = {
+                                                        "trigger": gap,
+                                                        "candidate_unit_ids": candidates,
+                                                        "context_1000": (wide_context.hex()
+                                                                         if wide_context is not None else None),
+                                                        "link_590": hex(link_590) if link_590 else None,
+                                                        "link_590_offset_1c00_400": (link_bytes.hex()
+                                                                                       if link_bytes is not None else None),
+                                                        "actor_ptr": hex(actor_ptr) if actor_ptr else None,
+                                                        "actor_400": (actor_bytes.hex()
+                                                                      if actor_bytes is not None else None),
+                                                        "ordinal": len(enemy_diagnostics) + 1,
+                                                        "limit_per_battle": enemy_diagnostic_limit}
+                                                    enemy_diagnostics.add(status_ptr)
                                         if snapshots:
                                             fields["identity_snapshots"] = snapshots
                                 if slot >= len(specs):
@@ -565,6 +656,8 @@ def main():
                         help="At a turn callback, read bounded raw context bytes for move-ID research")
     parser.add_argument("--inspect-critical-popup", action="append", default=[], metavar="NAME",
                         help="At the command-battle Critical popup call, read its enum and flags")
+    parser.add_argument("--enemy-table-pac", type=Path,
+                        help="Hash-check exact English enemy table before attach for conditional raw snapshots")
     args = parser.parse_args()
     specs = args.rva or args.address
     specs = specs or []
@@ -587,6 +680,8 @@ def main():
     actual_hash = file_hash(path)
     if actual_hash != args.expected_sha256.upper():
         raise SystemExit(f"Executable hash mismatch: {actual_hash} ({path})")
+    enemy_signatures = (enemy_signature_index(read_enemy_rows(args.enemy_table_pac))
+                        if args.enemy_table_pac else None)
     emit("executable", path=path, sha256=actual_hash)
     trace(args.pid, specs, args.seconds, use_rvas=bool(args.rva), max_hits=args.max_hits,
           write_specs=write_specs, hp_set_names=set(args.inspect_hp_set),
@@ -599,7 +694,7 @@ def main():
           turn_context_names=set(args.inspect_turn_context),
           result_entry_names=set(args.inspect_result_entry),
           critical_popup_names=set(args.inspect_critical_popup),
-          stop_file=args.stop_file)
+          stop_file=args.stop_file, enemy_signatures=enemy_signatures)
 
 
 if __name__ == "__main__":

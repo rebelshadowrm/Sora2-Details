@@ -1,11 +1,11 @@
-# Sora 2 Details 0.2.0 preview 12
+# Sora 2 Details 0.2.0 preview 13
 
 ## What changed in this preview
 
-- Split damage dealt into Player Damage Dealt and Enemy Damage Dealt. The default view shows player damage.
-- Player Damage Taken and Enemy Damage Taken now group by victim; open a victim to see attackers, then moves and individual hits. Damage with an unknown source remains under the victim without being assigned to either dealt team.
+- Unresolved move results now retain a specific lookup reason in saved encounters and result details.
+- The raw capture records bounded extra memory for positive HP writes, unreadable effect descriptors, and enemy stat signatures with no unique table match. This research evidence may help identify missing heal and enemy links; those labels remain unverified.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 12 with the meter's update button.
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 13 with the meter's update button.
 
 ## Using the preview
 
@@ -18,6 +18,8 @@ Start the supported game, then open the meter. It automatically starts a 12-hour
 The **↻** control checks GitHub for newer previews; **↑** downloads one and restarts after capture detaches. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
 
 ## Earlier preview changes
+
+Preview 12 split player and enemy damage dealt, and grouped taken damage by victim with attacker and move breakdowns.
 
 Preview 11 improved Retry detection after a full-party wipe, retaining the first observed attack in the new partial attempt.
 

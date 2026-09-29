@@ -52,7 +52,8 @@ def run_fixed(request, pid, request_id):
         return {"ok": True, "targetPid": pid, "serverPid": os.getpid()}
     if action == "stop":
         return {"ok": True, "stopping": True}
-    verify_target(pid)
+    target_path = verify_target(pid)
+    enemy_table_pac = Path(target_path).parent / "pac" / "steam" / "table_en.pac"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output = OUTPUT_DIR / f"probe-session-{request_id}.jsonl"
     if action == "live_capture":
@@ -71,6 +72,8 @@ def run_fixed(request, pid, request_id):
                    "--inspect-attack-call", "AttackEffectCall",
                    "--inspect-actor-identity", "AttackEffectCall",
                    "--inspect-actor-bytes", "AttackEffectCall",
+                   "--inspect-effect-descriptor", "AttackEffectCall",
+                   "--enemy-table-pac", str(enemy_table_pac),
                    "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
                    "--stop-file", str(stop_file),
                    "--seconds", str(seconds), "--max-hits", "100000"]
@@ -93,6 +96,7 @@ def run_fixed(request, pid, request_id):
                    "--inspect-actor-bytes", "AttackEffectCall",
                    "--inspect-result-frame", "AttackEffectCall",
                    "--inspect-effect-descriptor", "AttackEffectCall",
+                   "--enemy-table-pac", str(enemy_table_pac),
                    "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
                    "--stop-file", str(stop_file),
                    "--seconds", str(seconds), "--max-hits", "2000000"]
