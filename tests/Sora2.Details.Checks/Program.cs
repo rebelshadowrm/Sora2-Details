@@ -4,11 +4,26 @@ var path = Path.Combine(AppContext.BaseDirectory, "samples", "command-battles.js
 var encounters = EncounterReplay.Load(path);
 var fight = encounters.Single(e => e.Id == "sample-001");
 
-Check(EncounterProjection.Rows(fight, MeterMode.Damage).Sum(r => r.Value) == 380, "party damage");
+var playerDealt = EncounterProjection.Rows(fight, MeterMode.PlayerDamage).ToDictionary(row => row.Key);
+var enemyDealt = EncounterProjection.Rows(fight, MeterMode.EnemyDamage).ToDictionary(row => row.Key);
+Check(playerDealt.Values.Sum(row => row.Value) == 380 &&
+      enemyDealt.Values.Sum(row => row.Value) == 140 &&
+      enemyDealt["wolf-1"].Value == 60 && enemyDealt["wolf-2"].Value == 80,
+    "player and enemy damage dealt remain separate");
 Check(EncounterProjection.Rows(fight, MeterMode.Healing).Single().Value == 70, "effective healing");
-Check(EncounterProjection.Rows(fight, MeterMode.Taken).Sum(r => r.Value) == 140, "damage taken");
+var playerTaken = EncounterProjection.Rows(fight, MeterMode.PlayerTaken).ToDictionary(row => row.Key);
+Check(playerTaken["estelle"].Value == 60 && playerTaken["joshua"].Value == 80,
+    "player damage taken groups by victim");
+var enemyTaken = EncounterProjection.Rows(fight, MeterMode.EnemyTaken).ToDictionary(row => row.Key);
+Check(enemyTaken["wolf-1"].Value == 300 && enemyTaken["wolf-2"].Value == 80,
+    "enemy damage taken groups by victim");
+var wolfAttackers = EncounterProjection.Attackers(fight, MeterMode.EnemyTaken, "wolf-1")
+    .ToDictionary(row => row.Key);
+Check(wolfAttackers["estelle"].Value == 180 && wolfAttackers["joshua"].Value == 120,
+    "enemy victim drills into party attackers");
 Check(EncounterProjection.Rows(fight, MeterMode.Deaths).Single().Value == 1, "knockout count");
-Check(EncounterProjection.Moves(fight, MeterMode.Taken, "wolf-2").Single().DamageClass == DamageClass.Arts, "damage class");
+Check(EncounterProjection.MoveGroups(fight, MeterMode.PlayerTaken, "joshua", "wolf-2")
+    .Single().DamageClass == DamageClass.Arts, "taken damage keeps move class");
 Check(EncounterProjection.DeathRecap(fight, 5).Select(e => e.Sequence).SequenceEqual([4, 5]), "death recap");
 var longFight = fight with { Events = Enumerable.Range(1, 25)
     .Select(sequence => fight.Events[0] with { Sequence = sequence }).Reverse().ToArray() };
@@ -18,7 +33,7 @@ Check(EncounterProjection.FullTimeline(longFight).Select(e => e.Sequence)
 var hpCost = new CombatEvent(3, fight.StartedAt, null, null, "joshua", null,
     "HP loss (source unverified)", CombatEventKind.HpLoss, 20, 100, 80);
 var costThenKnockout = fight with { Events = [hpCost, fight.Events[3], fight.Events[4]] };
-Check(EncounterProjection.Rows(costThenKnockout, MeterMode.Taken).Single().Value == 80,
+Check(EncounterProjection.Rows(costThenKnockout, MeterMode.PlayerTaken).Single().Value == 80,
     "unattributed HP loss does not inflate damage taken");
 Check(EncounterProjection.DeathRecap(costThenKnockout, 5).Select(e => e.Kind)
     .SequenceEqual([CombatEventKind.HpLoss, CombatEventKind.Damage, CombatEventKind.Knockout]),
@@ -31,28 +46,33 @@ var many = Enumerable.Range(0, 12)
 Check(EncounterProjection.Recent(many).Count == 10, "recent fight limit");
 Check(many.Length == 12, "full history retained");
 
-// Live Agate HP observation is deliberately partial: only taken/healing can be projected.
+// Live Agate HP observation is deliberately partial: the attacker remains unknown.
 var researchPath = Path.Combine(AppContext.BaseDirectory, "samples", "research",
     "command-result-20260926.partial.json");
 var research = EncounterReplay.Load(researchPath).Single();
 Check(!research.IsComplete && research.Outcome == EncounterOutcome.Victory,
     "live research replay remains partial despite reported victory");
 Check(research.Events.Count == 4, "four observed in-battle HP changes");
-Check(EncounterProjection.Rows(research, MeterMode.Taken).Single().Value == 1408,
+Check(EncounterProjection.Rows(research, MeterMode.PlayerTaken).Single().Value == 1408,
     "observed Agate HP losses reconcile to taken meter");
 Check(EncounterProjection.Rows(research, MeterMode.Healing).Single().Value == 304,
     "observed Agate HP gain reconciles to healing meter");
-Check(EncounterProjection.Rows(research, MeterMode.Damage).Count == 0,
-    "unwatched enemy HP must not create damage-done totals");
+Check(EncounterProjection.Rows(research, MeterMode.PlayerDamage).Count == 0 &&
+      EncounterProjection.Rows(research, MeterMode.EnemyDamage).Count == 0 &&
+      EncounterProjection.Attackers(research, MeterMode.PlayerTaken, "observed-agate")
+          .Single().Key == "unknown",
+    "unknown damage source stays visible under its victim without a guessed team");
 
 var fullHpPath = Path.Combine(AppContext.BaseDirectory, "samples", "research",
     "full-hp-path-20260926.partial.json");
 var fullHpResearch = EncounterReplay.Load(fullHpPath).Single();
 Check(!fullHpResearch.IsComplete && fullHpResearch.Events.Count == 18,
     "all-actor HP research replay stays partial");
-Check(EncounterProjection.Rows(fullHpResearch, MeterMode.Damage).Single().Value == 57680,
-    "two observed enemy HP losses reconcile to unknown-source damage");
-Check(EncounterProjection.Rows(fullHpResearch, MeterMode.Taken).Single().Value == 2113,
+Check(EncounterProjection.Rows(fullHpResearch, MeterMode.PlayerDamage).Count == 0 &&
+      EncounterProjection.Rows(fullHpResearch, MeterMode.EnemyDamage).Count == 0 &&
+      EncounterProjection.Rows(fullHpResearch, MeterMode.EnemyTaken).Sum(row => row.Value) == 57680,
+    "unknown-source enemy HP losses remain under enemy victims");
+Check(EncounterProjection.Rows(fullHpResearch, MeterMode.PlayerTaken).Sum(row => row.Value) == 2113,
     "observed party HP losses reconcile to taken meter");
 Check(EncounterProjection.Rows(fullHpResearch, MeterMode.Healing).Single().Value == 1043,
     "observed party HP gains reconcile to healing meter");
@@ -60,7 +80,7 @@ Check(EncounterProjection.Rows(fullHpResearch, MeterMode.Healing).Single().Value
 var attributedPath = Path.Combine(AppContext.BaseDirectory, "samples", "research",
     "attributed-attack-20260926.partial.json");
 var attributed = EncounterReplay.Load(attributedPath).Single();
-var attributedRows = EncounterProjection.Rows(attributed, MeterMode.Damage)
+var attributedRows = EncounterProjection.Rows(attributed, MeterMode.PlayerDamage)
     .ToDictionary(row => row.Name, row => row.Value);
 Check(!attributed.IsComplete && attributed.Events.Count == 13,
     "attributed live attack path remains partial");
@@ -70,11 +90,11 @@ Check(attributedRows["Estelle"] == 32535 && attributedRows["Agate"] == 20284 &&
 Check(attributedRows.Values.Sum() == 59886,
     "effective damage equals two observed enemy HP pools");
 var estelleId = attributed.Actors.Single(actor => actor.Name == "Estelle").Id;
-var estelleResults = EncounterProjection.ResultsForRow(attributed, MeterMode.Damage, estelleId);
+var estelleResults = EncounterProjection.ResultsForRow(attributed, MeterMode.PlayerDamage, estelleId);
 Check(estelleResults.Count > 1 && estelleResults.Sum(effect => effect.EffectiveAmount ?? 0) == attributedRows["Estelle"] &&
       estelleResults.Zip(estelleResults.Skip(1)).All(pair => pair.First.Sequence < pair.Second.Sequence),
     "unknown live moves remain distinct ordered results and reconcile to Estelle's meter row");
-Check(EncounterProjection.Moves(attributed, MeterMode.Damage, estelleId)
+Check(EncounterProjection.Moves(attributed, MeterMode.PlayerDamage, estelleId)
       .Count(move => move.Name.StartsWith("Move unknown · result #", StringComparison.Ordinal)) ==
       estelleResults.Count(effect => string.IsNullOrWhiteSpace(effect.MoveName)),
     "unknown move results are not merged by damage type");
@@ -86,7 +106,7 @@ Check(attributed.Events.Count(effect => effect.EffectiveAmount == 0) == 2,
 var actionProbePath = Path.Combine(AppContext.BaseDirectory, "samples", "research",
     "action-id-attack-20260927.partial.json");
 var actionProbe = EncounterReplay.Load(actionProbePath).Single();
-var actionRows = EncounterProjection.Rows(actionProbe, MeterMode.Damage)
+var actionRows = EncounterProjection.Rows(actionProbe, MeterMode.PlayerDamage)
     .ToDictionary(row => row.Name, row => row.Value);
 Check(!actionProbe.IsComplete && actionProbe.Events.Count == 19 &&
       actionProbe.Issues!.Any(issue => issue.Contains("4 HP writes")),
@@ -123,17 +143,28 @@ Check(DamageAmounts.From(overkillHit with { ResolvedAmount = null }).Overkill is
 var unknownHit = fight.Events[0] with { SourceId = null, MoveId = null, MoveName = null,
     DamageClass = DamageClass.Unknown };
 var unknownFight = fight with { Events = [unknownHit] };
-Check(EncounterProjection.Rows(unknownFight, MeterMode.Damage).Single().Key == "unknown",
-    "enemy HP damage with unknown source remains visible");
-Check(EncounterProjection.Moves(unknownFight, MeterMode.Damage, "unknown").Single().Value == 100,
-    "unknown-source move breakdown reconciles");
+Check(EncounterProjection.Rows(unknownFight, MeterMode.PlayerDamage).Count == 0 &&
+      EncounterProjection.Rows(unknownFight, MeterMode.EnemyDamage).Count == 0,
+    "unknown source is not assigned to a damage-dealt team");
+Check(EncounterProjection.MoveGroups(unknownFight, MeterMode.EnemyTaken, "wolf-1", "unknown")
+    .Single().Value == 100, "unknown-source move breakdown reconciles under victim");
+Check(EncounterProjection.Attackers(unknownFight, MeterMode.EnemyTaken, "wolf-1")
+    .Single().Key == "unknown", "enemy victim retains unknown attacker");
+var sharedVictim = fight with { Events = [fight.Events[3],
+    fight.Events[2] with { Sequence = 10, TargetId = "joshua", EffectiveAmount = 20 }] };
+var joshuaAttackers = EncounterProjection.Attackers(sharedVictim, MeterMode.PlayerTaken, "joshua")
+    .ToDictionary(row => row.Key);
+Check(joshuaAttackers["wolf-2"].Value == 80 && joshuaAttackers["wolf-1"].Value == 20 &&
+      EncounterProjection.ResultsForRow(sharedVictim, MeterMode.PlayerTaken, "joshua", "wolf-1")
+          .Single().EffectiveAmount == 20,
+    "player victim drills into individual attackers without mixing their moves");
 var groupedFight = fight with { Events = [
     fight.Events[0] with { Sequence = 21, MoveName = "Shatter Break", EffectiveAmount = 100 },
     fight.Events[0] with { Sequence = 22, MoveName = "Shatter Break", EffectiveAmount = 80 },
     fight.Events[0] with { Sequence = 23, MoveName = null, EffectiveAmount = 30 },
     fight.Events[0] with { Sequence = 24, MoveName = null, EffectiveAmount = 20 }
 ] };
-var drillGroups = EncounterProjection.MoveGroups(groupedFight, MeterMode.Damage, fight.Events[0].SourceId!);
+var drillGroups = EncounterProjection.MoveGroups(groupedFight, MeterMode.PlayerDamage, fight.Events[0].SourceId!);
 Check(drillGroups.Count == 3 && drillGroups.Single(group => group.Name == "Shatter Break").Hits.Count == 2 &&
       drillGroups.Sum(group => group.Value) == 230,
     "drilldown groups named hits and keeps unknown hits separate without losing damage");
@@ -145,7 +176,7 @@ var first = fight.Events[0];
 Check(assembler.Accept(new EffectObserved(start.EncounterId, first)).Single().Events.Count == 1, "first effect recorded");
 Check(assembler.Accept(new EffectObserved(start.EncounterId, first)).Single().Events.Count == 1, "identical retransmission deduplicated");
 var finished = assembler.Accept(new EncounterEnded(start.EncounterId, fight.StartedAt.AddMinutes(1), EncounterOutcome.Victory)).Single();
-Check(finished.IsComplete && EncounterProjection.Rows(finished, MeterMode.Damage).Single().Value == 100,
+Check(finished.IsComplete && EncounterProjection.Rows(finished, MeterMode.PlayerDamage).Single().Value == 100,
     "assembled damage survives battle end");
 
 var gapStart = start with { EncounterId = "gap-check" };

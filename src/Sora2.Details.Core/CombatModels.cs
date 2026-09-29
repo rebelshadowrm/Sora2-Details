@@ -3,7 +3,7 @@ namespace Sora2.Details.Core;
 public enum CombatTeam { Party, Enemy, Other }
 public enum CombatEventKind { Damage, Healing, Knockout, Revival, Status, Unknown, HpLoss }
 public enum DamageClass { Unknown, Physical, Arts, Other }
-public enum MeterMode { Damage, Healing, Taken, Deaths }
+public enum MeterMode { PlayerDamage, EnemyDamage, PlayerTaken, EnemyTaken, Healing, Deaths }
 public enum EncounterOutcome { InProgress, Victory, Escape, Defeat, Interrupted, Unknown }
 
 public sealed record Actor(string Id, string Name, CombatTeam Team,

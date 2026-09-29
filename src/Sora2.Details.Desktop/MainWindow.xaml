@@ -107,7 +107,7 @@
                 </Grid.ColumnDefinitions>
                 <Button x:Name="ModeButton" Grid.Column="0" Style="{StaticResource ChromeButton}"
                         HorizontalContentAlignment="Left" FontWeight="SemiBold" Click="ModeButton_Click"
-                        ToolTip="Choose Damage, Healing, Taken, or Deaths" />
+                        ToolTip="Choose Player or Enemy Damage Dealt, Damage Taken, Healing, or Deaths" />
                 <Border x:Name="HeaderDragArea" Grid.Column="1" Background="Transparent" Cursor="SizeAll"
                         ToolTip="Drag to move · right-click for display settings" />
                 <Button Grid.Column="2" Style="{StaticResource ChromeButton}" Content="▾"

@@ -1,11 +1,11 @@
-# Sora 2 Details 0.2.0 preview 11
+# Sora 2 Details 0.2.0 preview 12
 
 ## What changed in this preview
 
-- Retry detection now starts a new partial attempt when, after four observed party knockouts, a member last seen at zero HP attacks or appears with positive HP without an observed revive. The opening observed attack stays in the new attempt.
-- The in-meter knockout list and one-click death recap from preview 10 remain included.
+- Split damage dealt into Player Damage Dealt and Enemy Damage Dealt. The default view shows player damage.
+- Player Damage Taken and Enemy Damage Taken now group by victim; open a victim to see attackers, then moves and individual hits. Damage with an unknown source remains under the victim without being assigned to either dealt team.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 11 with the meter's update button.
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 12 with the meter's update button.
 
 ## Using the preview
 
@@ -19,7 +19,9 @@ The **↻** control checks GitHub for newer previews; **↑** downloads one and 
 
 ## Earlier preview changes
 
-Preview 10 added the in-meter knockout list and one-click death recaps. It also recognized a retry after a full-party wipe when the first later HP read was full; preview 11 expands that detection to the earlier observed party attack and partial-HP reads.
+Preview 11 improved Retry detection after a full-party wipe, retaining the first observed attack in the new partial attempt.
+
+Preview 10 added the in-meter knockout list and one-click death recaps. It also recognized a retry after a full-party wipe when the first later HP read was full.
 
 Preview 9 applied opacity to the whole window, added tray-controlled click-through, and removed the Visible rows setting.
 

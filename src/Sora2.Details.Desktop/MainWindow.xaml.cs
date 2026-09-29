@@ -20,8 +20,9 @@ public partial class MainWindow : Window
     private string? _captureError;
     private Encounter? _selectedEncounter;
     private bool _followNewest = true;
-    private MeterMode _mode = MeterMode.Damage;
+    private MeterMode _mode = MeterMode.PlayerDamage;
     private string? _sourceKey;
+    private string? _attackerKey;
     private string? _moveKey;
     private readonly DispatcherTimer _placementSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _captureStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
@@ -211,17 +212,23 @@ public partial class MainWindow : Window
     private void ResetDrill()
     {
         _sourceKey = null;
+        _attackerKey = null;
         _moveKey = null;
     }
+
+    private static bool IsTakenMode(MeterMode mode) =>
+        mode is MeterMode.PlayerTaken or MeterMode.EnemyTaken;
 
     private void RenderMeter()
     {
         RefreshCaptureStatus();
         ModeButton.Content = _mode switch
         {
-            MeterMode.Damage => "Damage Done  ▾",
+            MeterMode.PlayerDamage => "Player Damage Dealt  ▾",
+            MeterMode.EnemyDamage => "Enemy Damage Dealt  ▾",
+            MeterMode.PlayerTaken => "Player Damage Taken  ▾",
+            MeterMode.EnemyTaken => "Enemy Damage Taken  ▾",
             MeterMode.Healing => "Healing Done  ▾",
-            MeterMode.Taken => "Damage Taken  ▾",
             MeterMode.Deaths => "Deaths  ▾",
             _ => "Meter  ▾"
         };
@@ -256,6 +263,8 @@ public partial class MainWindow : Window
                     ThemeForSource(row.Key))
                 with { Preview = _mode == MeterMode.Deaths
                     ? new MeterPreview($"{row.Name} · deaths", BuildDeathRows(row.Key))
+                    : IsTakenMode(_mode)
+                    ? new MeterPreview($"{row.Name} · attackers", BuildAttackerRows(row.Key))
                     : new MeterPreview($"{row.Name} · moves", BuildMoveRows(row.Key)) }).ToArray();
         }
         else if (_mode == MeterMode.Deaths)
@@ -266,15 +275,32 @@ public partial class MainWindow : Window
         }
         else
         {
-            var groups = EncounterProjection.MoveGroups(_selectedEncounter, _mode, _sourceKey!);
-            var selectedGroup = groups.FirstOrDefault(group => group.Key == _moveKey);
-            if (_moveKey is not null && selectedGroup is null) _moveKey = null;
-            displayRows = selectedGroup is null ? BuildMoveRows(_sourceKey!)
-                : BuildHitRows(selectedGroup, ThemeForSource(_sourceKey!), SkillIcons.For(selectedGroup));
-            displayedTotal = selectedGroup?.Value ?? selectedSource.Value;
-            EncounterLabel.Text += selectedGroup is null
-                ? $" · {selectedSource.Name}"
-                : $" · {selectedSource.Name} · {selectedGroup.Name}";
+            IReadOnlyList<MeterRow> attackers = IsTakenMode(_mode)
+                ? EncounterProjection.Attackers(_selectedEncounter, _mode, _sourceKey!) : [];
+            var selectedAttacker = attackers.FirstOrDefault(row => row.Key == _attackerKey);
+            if (_attackerKey is not null && selectedAttacker is null)
+            {
+                _attackerKey = null;
+                _moveKey = null;
+            }
+            if (IsTakenMode(_mode) && selectedAttacker is null)
+            {
+                displayRows = BuildAttackerRows(_sourceKey!);
+                displayedTotal = selectedSource.Value;
+                EncounterLabel.Text += $" · {selectedSource.Name}";
+            }
+            else
+            {
+                var groups = EncounterProjection.MoveGroups(_selectedEncounter, _mode, _sourceKey!, _attackerKey);
+                var selectedGroup = groups.FirstOrDefault(group => group.Key == _moveKey);
+                if (_moveKey is not null && selectedGroup is null) _moveKey = null;
+                displayRows = selectedGroup is null ? BuildMoveRows(_sourceKey!, _attackerKey)
+                    : BuildHitRows(selectedGroup, ThemeForSource(_attackerKey ?? _sourceKey!), SkillIcons.For(selectedGroup));
+                displayedTotal = selectedGroup?.Value ?? selectedAttacker?.Value ?? selectedSource.Value;
+                EncounterLabel.Text += $" · {selectedSource.Name}" +
+                    (selectedAttacker is null ? "" : $" · {selectedAttacker.Name}") +
+                    (selectedGroup is null ? "" : $" · {selectedGroup.Name}");
+            }
         }
         BackButton.Visibility = _sourceKey is null ? Visibility.Collapsed : Visibility.Visible;
         MeterRows.ItemsSource = displayRows;
@@ -297,9 +323,11 @@ public partial class MainWindow : Window
         {
             var choice = new MenuItem { Header = mode switch
             {
-                MeterMode.Damage => "Damage Done",
+                MeterMode.PlayerDamage => "Player Damage Dealt",
+                MeterMode.EnemyDamage => "Enemy Damage Dealt",
+                MeterMode.PlayerTaken => "Player Damage Taken",
+                MeterMode.EnemyTaken => "Enemy Damage Taken",
                 MeterMode.Healing => "Healing Done",
-                MeterMode.Taken => "Damage Taken",
                 _ => "Deaths"
             }, IsCheckable = true, IsChecked = mode == _mode };
             choice.Click += (_, _) => { _mode = mode; ResetDrill(); RenderMeter(); };
@@ -376,6 +404,7 @@ public partial class MainWindow : Window
             return;
         }
         if (_sourceKey is null) _sourceKey = row.Key;
+        else if (IsTakenMode(_mode) && _attackerKey is null) _attackerKey = row.Key;
         else if (_moveKey is null) _moveKey = row.Key;
         else return;
         RenderMeter();
@@ -392,16 +421,28 @@ public partial class MainWindow : Window
     private void NavigateBack()
     {
         if (_moveKey is not null) _moveKey = null;
+        else if (_attackerKey is not null) _attackerKey = null;
         else _sourceKey = null;
         RenderMeter();
     }
 
-    private IReadOnlyList<MeterDisplayRow> BuildMoveRows(string sourceKey)
+    private IReadOnlyList<MeterDisplayRow> BuildAttackerRows(string victimKey)
     {
         if (_selectedEncounter is null) return [];
-        var groups = EncounterProjection.MoveGroups(_selectedEncounter, _mode, sourceKey);
+        var attackers = EncounterProjection.Attackers(_selectedEncounter, _mode, victimKey);
+        var maximum = attackers.Count == 0 ? 0 : attackers.Max(row => row.Value);
+        return attackers.Select((row, index) => MeterDisplayRow.From(row, index, maximum, _mode,
+                ThemeForSource(row.Key)) with
+            { Preview = new MeterPreview($"{row.Name} · moves", BuildMoveRows(victimKey, row.Key)) })
+            .ToArray();
+    }
+
+    private IReadOnlyList<MeterDisplayRow> BuildMoveRows(string sourceKey, string? attackerKey = null)
+    {
+        if (_selectedEncounter is null) return [];
+        var groups = EncounterProjection.MoveGroups(_selectedEncounter, _mode, sourceKey, attackerKey);
         var maximum = groups.Count == 0 ? 0 : groups.Max(group => group.Value);
-        var theme = ThemeForSource(sourceKey);
+        var theme = ThemeForSource(attackerKey ?? sourceKey);
         return groups.Select((group, index) =>
         {
             var icon = SkillIcons.For(group);
@@ -448,10 +489,12 @@ public partial class MainWindow : Window
         return group.Hits.Select((hit, index) =>
         {
             var target = actors.TryGetValue(hit.TargetId, out var actor) ? actor.Name : hit.TargetId;
-            var name = $"{hit.ObservedAt.ToLocalTime():HH:mm:ss.fff} → {target}";
+            var source = hit.SourceId is not null && actors.TryGetValue(hit.SourceId, out var attacker)
+                ? attacker.Name : "Unknown source";
+            var name = $"{hit.ObservedAt.ToLocalTime():HH:mm:ss.fff} · {source} → {target}";
             var amounts = DamageAmounts.From(hit);
             var isDamage = hit.Kind == CombatEventKind.Damage;
-            var tooltip = $"Result #{hit.Sequence} · {group.Name} → {target}\n" +
+            var tooltip = $"Result #{hit.Sequence} · {source} · {group.Name} → {target}\n" +
                 $"{(isDamage ? "Total hit" : "Total result")}: {amounts.Total?.ToString("N0") ?? "unknown"}\n" +
                 $"Effective: {amounts.Effective?.ToString("N0") ?? "unknown"}\n" +
                 (isDamage ? $"Overkill: {amounts.Overkill?.ToString("N0") ?? "unknown"}\n" : "") +
