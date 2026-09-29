@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _placementSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _captureStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private MeterDisplaySettings _displaySettings = MeterDisplaySettings.Load();
+    private readonly EncounterHistorySettings _historySettings = EncounterHistorySettings.Load();
     private bool _placementReady;
     private bool _exitAfterDetach;
     private bool _closeWhenReady;
@@ -234,7 +235,17 @@ public partial class MainWindow : Window
         };
         var waiting = _selectedEncounter is null && ActiveTraceName() is not null && _followNewest;
         var resetWaiting = waiting && ActiveSessionResetAt() is not null;
-        EncounterLabel.Text = _selectedEncounter?.Label ??
+        var encounterClassification = _selectedEncounter is { } currentEncounter
+            ? EncounterHistoryView.Classify(currentEncounter, _historySettings.BossEncounterIds,
+                _historySettings.RegularEncounterIds) : BossClassification.Unclassified;
+        EncounterLabel.Text = _selectedEncounter is { } shown
+            ? (encounterClassification switch
+            {
+                BossClassification.MarkedBoss => "★ BOSS · ",
+                BossClassification.CatalogBossCandidate => "★ Boss candidate · ",
+                BossClassification.PlusMiniBossCandidate => "✦ Mini-boss candidate · ",
+                _ => ""
+            }) + shown.Label :
             (resetWaiting ? "Session reset · waiting for battle" :
                 waiting ? "Waiting for next command battle" : "No encounter selected");
         if (_selectedEncounter is null)
@@ -350,9 +361,40 @@ public partial class MainWindow : Window
             menu.Items.Add(current);
             menu.Items.Add(new Separator());
         }
-        foreach (var encounter in EncounterProjection.Recent(_encounters))
+        var show = new MenuItem { Header = "History view" };
+        foreach (var bossFocused in new[] { false, true })
         {
-            var choice = new MenuItem { Header = HistoryWindow.Describe(encounter), IsCheckable = true,
+            var choice = new MenuItem { Header = bossFocused ? "Bosses + unclassified" : "All fights",
+                IsCheckable = true, IsChecked = _historySettings.BossFocused == bossFocused };
+            choice.Click += (_, _) => SetBossFocusedHistory(bossFocused);
+            show.Items.Add(choice);
+        }
+        menu.Items.Add(show);
+        if (_selectedEncounter is { } selected)
+        {
+            var classify = new MenuItem { Header = "Classify selected fight" };
+            foreach (var (header, mark) in new[] {
+                ("Mark boss", BossClassification.MarkedBoss),
+                ("Mark regular", BossClassification.MarkedRegular),
+                ("Clear manual mark", BossClassification.Unclassified) })
+            {
+                var choice = new MenuItem { Header = header,
+                    IsEnabled = mark != BossClassification.Unclassified ||
+                        _historySettings.BossEncounterIds.Contains(selected.Id) ||
+                        _historySettings.RegularEncounterIds.Contains(selected.Id) };
+                choice.Click += (_, _) => MarkSelectedEncounter(mark);
+                classify.Items.Add(choice);
+            }
+            menu.Items.Add(classify);
+        }
+        menu.Items.Add(new Separator());
+        var visible = EncounterHistoryView.Visible(_encounters, _historySettings.BossFocused,
+            _historySettings.BossEncounterIds, _historySettings.RegularEncounterIds);
+        foreach (var encounter in EncounterProjection.Recent(visible))
+        {
+            var choice = new MenuItem { Header = HistoryWindow.Describe(encounter,
+                EncounterHistoryView.Classify(encounter, _historySettings.BossEncounterIds,
+                    _historySettings.RegularEncounterIds)), IsCheckable = true,
                 IsChecked = (activeTrace is null || !_followNewest) &&
                     encounter.Id == _selectedEncounter?.Id };
             choice.Click += (_, _) =>
@@ -364,19 +406,46 @@ public partial class MainWindow : Window
             menu.Items.Add(choice);
         }
         menu.Items.Add(new Separator());
-        var more = new MenuItem { Header = "More…" };
+        var more = new MenuItem { Header = $"More history… ({visible.Count} fights)" };
         more.Click += (_, _) =>
         {
-            var history = new HistoryWindow(_encounters) { Owner = this };
+            var history = new HistoryWindow(_encounters, _historySettings) { Owner = this };
             if (history.ShowDialog() == true)
             {
                 _followNewest = activeTrace is null && history.SelectedEncounter?.Id ==
                     _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault()?.Id;
                 SelectEncounter(history.SelectedEncounter);
             }
+            RenderMeter();
         };
         menu.Items.Add(more);
         OpenMenu(menu, (Button)sender);
+    }
+
+    private void SetBossFocusedHistory(bool bossFocused)
+    {
+        _historySettings.BossFocused = bossFocused;
+        SaveHistorySettings();
+    }
+
+    private void MarkSelectedEncounter(BossClassification mark)
+    {
+        if (_selectedEncounter is not { } selected) return;
+        if (mark == BossClassification.MarkedBoss) _historySettings.MarkBoss(selected.Id);
+        else if (mark == BossClassification.MarkedRegular) _historySettings.MarkRegular(selected.Id);
+        else _historySettings.ClearMark(selected.Id);
+        SaveHistorySettings();
+        RenderMeter();
+    }
+
+    private void SaveHistorySettings()
+    {
+        try { _historySettings.Save(); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"History preference could not be saved: {exception.Message}",
+                "Encounter history", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private static void OpenMenu(ContextMenu menu, Button owner)

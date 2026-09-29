@@ -5,6 +5,8 @@ description: Package and publish Sora 2 Details Windows preview installers, port
 
 # Publish a Sora 2 Details build
 
+For startup, UAC identity, SmartScreen, or signing changes, read [distribution UX](../sora2-meter-distribution-ux/SKILL.md). The installer bundles a branded capture host; keep it in the package and preserve the Python readiness record's separate host/server PIDs. Pass `-SignParams` (or `VPK_SIGN_PARAMS`) and `-RequireSigning` once a signing identity is provisioned. Velopack must perform signing during packaging, including Setup and updater; an unsigned local build cannot validate publisher trust. Do not promise an EV certificate bypasses SmartScreen.
+
 Work in this repository. Read [README](../../../README.md), [release notes](../../../RELEASE-NOTES.md), [the installer builder](../../../tools/build_installer.ps1), and [the preview workflow](../../../.github/workflows/preview-release.yml) before changing release behavior. Inspect `git status`, the current tags/releases, and the requested distribution scope. Packaging alone does not imply publishing; when the user requests a release, carry it through publication and verification within their authorization.
 
 The supported shareable path is the **Windows x64 Velopack preview**. `tools/build_installer.ps1 -Version X.Y.Z-preview.N` builds the self-contained .NET app, bundles a hash-checked embedded Python runtime, runs the .NET checks, and produces Setup, portable ZIP, full package, delta package when a predecessor is present, and the `win-x64-preview` feed under ignored `releases/velopack-preview`. The older `tools/build_release.ps1` makes a ZIP that needs an external Python installation; use it only when that format is requested.

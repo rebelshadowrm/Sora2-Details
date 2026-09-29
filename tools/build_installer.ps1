@@ -1,9 +1,14 @@
 param(
     [string]$Version = '0.2.0-preview.1',
-    [string]$OutputDir
+    [string]$OutputDir,
+    [string]$SignParams = $env:VPK_SIGN_PARAMS,
+    [switch]$RequireSigning
 )
 
 $ErrorActionPreference = 'Stop'
+if ($RequireSigning -and [string]::IsNullOrWhiteSpace($SignParams)) {
+    throw 'RequireSigning needs SignParams (or VPK_SIGN_PARAMS) for the configured signing identity.'
+}
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
     throw 'Use a semantic version such as 0.2.0-preview.1.'
 }
@@ -39,6 +44,10 @@ try {
         -c Release -r win-x64 --self-contained true `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $stage
     if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
+    & dotnet publish (Join-Path $root 'src\Sora2.Details.CaptureHost\Sora2.Details.CaptureHost.csproj') `
+        -c Release -r win-x64 --self-contained true -p:PublishTrimmed=true `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $stage
+    if ($LASTEXITCODE -ne 0) { throw 'Capture host publish failed.' }
 
     $tools = Join-Path $stage 'tools'
     $python = Join-Path $stage 'python'
@@ -66,13 +75,57 @@ try {
         & (Join-Path $python 'python.exe') -B (Join-Path $tools $script) --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Embedded Python could not run $script." }
     }
+    & (Join-Path $python 'python.exe') -B (Join-Path $root 'tools\test_elevated_probe_session.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged probe readiness checks failed.' }
+    foreach ($check in @(
+        @{ Arguments = '--check-package'; ExitCode = 0 },
+        @{ Arguments = '0 30 C:\Data'; ExitCode = 3 },
+        @{ Arguments = '1 1501 C:\Data'; ExitCode = 3 },
+        @{ Arguments = '1 30 relative-path'; ExitCode = 3 },
+        @{ Arguments = '--arbitrary-command'; ExitCode = 3 }
+    )) {
+        $hostCheck = Start-Process -FilePath (Join-Path $stage 'Sora2.Details.CaptureHost.exe') `
+            -ArgumentList $check.Arguments -WindowStyle Hidden -Wait -PassThru
+        if ($hostCheck.ExitCode -ne $check.ExitCode) {
+            throw "Packaged capture host check failed: $($check.Arguments) (exit $($hostCheck.ExitCode))."
+        }
+    }
 
+    $signArguments = @()
+    if (-not [string]::IsNullOrWhiteSpace($SignParams)) {
+        $signArguments = @('--signParams', $SignParams)
+    } else {
+        Write-Warning 'Unsigned preview: Windows may display Unknown publisher and SmartScreen warnings.'
+    }
     & dotnet vpk pack --packId Sora2.Details --packVersion $Version --packDir $stage `
         --mainExe Sora2.Details.Desktop.exe --packTitle 'Sora 2 Details' `
         --packAuthors 'Sora 2 Details contributors' --runtime win-x64 `
         --channel win-x64-preview --outputDir $output `
-        --releaseNotes (Join-Path $root 'RELEASE-NOTES.md')
+        --icon (Join-Path $root 'src\Sora2.Details.Desktop\assets\sora2-details.ico') `
+        --releaseNotes (Join-Path $root 'RELEASE-NOTES.md') @signArguments
     if ($LASTEXITCODE -ne 0) { throw 'Velopack packaging failed.' }
+    if ($RequireSigning) {
+        # Inspect delivered bytes: Velopack may sign a working copy of packDir.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $portable = [IO.Compression.ZipFile]::OpenRead(
+            (Join-Path $output 'Sora2.Details-win-x64-preview-Portable.zip'))
+        $signedFiles = @((Join-Path $output 'Sora2.Details-win-x64-preview-Setup.exe'))
+        try {
+            foreach ($entryName in @('current/Sora2.Details.Desktop.exe',
+                'current/Sora2.Details.CaptureHost.exe', 'Update.exe')) {
+                $entry = $portable.GetEntry($entryName)
+                if ($null -eq $entry) { throw "Missing packaged executable: $entryName" }
+                $verifyPath = Join-Path $stage ('verify-' + [IO.Path]::GetFileName($entryName))
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $verifyPath, $true)
+                $signedFiles += $verifyPath
+            }
+        } finally { $portable.Dispose() }
+        foreach ($signedFile in $signedFiles) {
+            if ((Get-AuthenticodeSignature -LiteralPath $signedFile).Status -ne 'Valid') {
+                throw "Missing or invalid Authenticode signature: $signedFile"
+            }
+        }
+    }
 
     Get-ChildItem -LiteralPath $output -File | Sort-Object Name | Select-Object Name, Length
 } finally {

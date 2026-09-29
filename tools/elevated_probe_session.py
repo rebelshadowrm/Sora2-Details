@@ -262,6 +262,7 @@ def serve(args):
     expiry = now() + timedelta(minutes=args.minutes)
     ready = session_dir / "ready.json"
     atomic_json(ready, {"sessionId": session_id, "serverPid": os.getpid(),
+                        "hostPid": int(os.environ.get("SORA2_DETAILS_HOST_PID", "0")),
                         "targetPid": args.pid, "expiresAt": expiry.isoformat(),
                         "actions": ["ping", "status_snapshot", "scan_status",
                                     "name_capture", "boundary_capture", "turn_capture",

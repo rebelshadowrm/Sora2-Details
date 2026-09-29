@@ -31,6 +31,8 @@ For the current installed preview, `tools/lifecycle_probe.py` writes bounded raw
 
 ## Capture decisions
 
+For startup/elevation or distribution-footprint work, use [distribution UX](../sora2-meter-distribution-ux/SKILL.md). The installed launcher elevates `Sora2.Details.CaptureHost.exe`, not the desktop/updater. Its fixed bundled-Python child reports both host and server PIDs; preserve the initiating user's data path across elevation. Validate readiness changes with `python -m unittest discover -s tools -p test_elevated_probe_session.py` without attaching to the game.
+
 The handoff contains **static leads**, not verified hooks. Recheck the local EXE SHA-256 before using an RVA. Prove lifecycle and an attributed HP result in a controlled fight before shipping a native adapter. In particular, `btlcom.OnAttackHit` is a script lookup reference and is not yet a confirmed damage event. If a candidate lacks source, target, move, or final amount, trace toward the resolved HP write or correlate it with a verified action context. Keep unsupported EXE versions from using unchecked offsets.
 
 Use `ICombatCaptureSource` and the event records in `src/Sora2.Details.Core` as the current integration seam. The v1 encounter assembler, recorder, durable store, and desktop wiring already exist, but their effect-only protocol is incomplete for a full combat log. Evolve that protocol when verified runtime data warrants it, keeping raw action and result observations independent of HP changes. Keep capture work off the game's critical path and expose dropped events rather than silently presenting incomplete totals. Preserve the sample replay as a development input.

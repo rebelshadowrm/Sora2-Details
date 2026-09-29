@@ -3,6 +3,34 @@ using Sora2.Details.Core;
 var path = Path.Combine(AppContext.BaseDirectory, "samples", "command-battles.json");
 var encounters = EncounterReplay.Load(path);
 var fight = encounters.Single(e => e.Id == "sample-001");
+var markedBosses = new HashSet<string> { fight.Id };
+var markedRegular = new HashSet<string> { "sample-002" };
+var noMarks = new HashSet<string>();
+Check(EncounterHistoryView.Visible(encounters, true, markedBosses, markedRegular).Count ==
+      encounters.Count - 1, "boss-focused history retains unclassified fights");
+Check(!EncounterHistoryView.Visible(encounters, true, markedBosses, markedRegular)
+    .Any(e => e.Id == "sample-002"), "boss-focused history hides only marked regular fights");
+Check(EncounterHistoryView.Visible(encounters, false, markedBosses, markedRegular).Count == encounters.Count,
+    "all-fights history retains every encounter");
+Check(EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("★ BOSS") &&
+      EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("Wolf A") &&
+      EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("Wolf B"),
+    "boss history label includes marker and enemy name");
+var walterFight = fight with { Actors = [new Actor("walter", "Walter", CombatTeam.Enemy,
+    LookupUnitId: "chr0120_e00")] };
+Check(EncounterHistoryView.Classify(walterFight, noMarks, noMarks) == BossClassification.CatalogBossCandidate,
+    "catalog boss name is highlighted from exact English table label");
+var plusFight = fight with { Actors = [new Actor("slug", "Sticky Slug+", CombatTeam.Enemy)] };
+Check(EncounterHistoryView.Classify(plusFight, noMarks, noMarks) == BossClassification.PlusMiniBossCandidate,
+    "plus-suffixed enemy is a mini-boss candidate");
+Check(EncounterHistoryView.Classify(walterFight, noMarks, new HashSet<string> { fight.Id }) ==
+      BossClassification.MarkedRegular, "manual regular mark overrides catalog candidate");
+var repeatedEnemies = fight with { Actors = [
+    new Actor("wolf-1", "Wolf", CombatTeam.Enemy),
+    new Actor("wolf-2", "Wolf", CombatTeam.Enemy),
+    new Actor("unknown-1", "? Enemy 3 (ID 60003)", CombatTeam.Enemy)] };
+Check(EncounterHistoryView.EnemySummary(repeatedEnemies) == "Wolf ×2, Unknown enemy",
+    "history groups repeated and unresolved enemies");
 
 var playerDealt = EncounterProjection.Rows(fight, MeterMode.PlayerDamage).ToDictionary(row => row.Key);
 var enemyDealt = EncounterProjection.Rows(fight, MeterMode.EnemyDamage).ToDictionary(row => row.Key);

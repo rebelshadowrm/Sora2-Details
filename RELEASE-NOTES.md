@@ -1,11 +1,19 @@
-# Sora 2 Details 0.2.0 preview 13
+# Sora 2 Details 0.2.0 preview 14
+
+## Capture improvements in preview 13
+
+- Encounter history can focus on boss and unclassified fights, while preserving marked regular fights under All fights. Candidate labels remain cautious; manual Boss and Regular marks are available and persist across app updates.
+- Before the first elevation, the app explains the branded Sora 2 Details Capture helper's read-only purpose, the partial capture scope, and that declining keeps the meter available. The explanation is remembered across updates; new capture sessions can still request Windows approval.
+- New installer builds elevate the branded capture helper with a meter icon instead of Python. The meter and updater retain normal permissions.
+- Installer builds support release signing and a `-RequireSigning` gate. This preview is unsigned, so Windows may show Unknown publisher or SmartScreen warnings.
+- Added packaging/readiness checks and a distribution UX audit. Interactive UAC and installed update validation were not available in the build environment.
 
 ## What changed in this preview
 
 - Unresolved move results now retain a specific lookup reason in saved encounters and result details.
 - The raw capture records bounded extra memory for positive HP writes, unreadable effect descriptors, and enemy stat signatures with no unique table match. This research evidence may help identify missing heal and enemy links; those labels remain unverified.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 13 with the meter's update button.
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 14 with the meter's update button.
 
 ## Using the preview
 

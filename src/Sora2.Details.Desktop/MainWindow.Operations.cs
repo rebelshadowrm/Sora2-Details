@@ -49,7 +49,7 @@ public partial class MainWindow
         {
             "Capturing" => "Live capture is running. Close the meter to stop and exit, or click ■ to stop.",
             "Stopping" => "Waiting for the external probe to detach.",
-            "Starting" => "Starting capture; approve the Windows administrator prompt if shown.",
+            "Starting" => "Windows will ask to approve Sora 2 Details Capture for a read-only probe of the supported game process. Capture is partial; canceling leaves saved encounters available.",
             "Research" => "Showing a research replay; no live capture is attached.",
             _ => _sampleMode
                 ? "Sample replay is shown. Start the game, then click ● if capture did not start automatically."
@@ -151,9 +151,15 @@ public partial class MainWindow
             gameDirectory = Path.GetDirectoryName(picker.FileName);
         }
         if (gameDirectory is null) return;
+        if (!ExplainCaptureElevation())
+        {
+            CaptureButton.ToolTip = "Live capture was not started. The meter and saved encounters remain available.";
+            RefreshCaptureStatus();
+            return;
+        }
         _captureBusy = true;
         _captureStarting = true;
-        CaptureButton.ToolTip = "Starting capture; Windows may request administrator approval.";
+        CaptureButton.ToolTip = "Windows will ask to approve Sora 2 Details Capture. It reads the supported game process for partial battle capture.";
         RefreshCaptureStatus();
         try
         {
@@ -199,6 +205,40 @@ public partial class MainWindow
             RefreshCaptureStatus();
             if (_closeWhenReady) Close();
         }
+    }
+
+    private static bool ExplainCaptureElevation()
+    {
+        var dataDirectory = Path.GetDirectoryName(CurrentCapturePath()) is { } liveDirectory
+            ? Path.GetDirectoryName(liveDirectory) : null;
+        var noticePath = dataDirectory is null ? null : Path.Combine(dataDirectory, "capture-elevation-notice.txt");
+        try
+        {
+            if (noticePath is not null && File.Exists(noticePath)) return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+
+        var answer = MessageBox.Show(
+            "Live capture uses Windows administrator approval.\n\n" +
+            "Sora 2 Details Capture reads the supported game process to record partial command-battle activity. " +
+            "The probe is read-only; it does not change game files or game state. The meter and saved history " +
+            "do not need administrator access.\n\n" +
+            "Continue to the standard Windows approval prompt? If you cancel, the meter remains available " +
+            "without live capture. This unsigned preview may show Unknown publisher in Windows.",
+            "Why live capture requests approval",
+            MessageBoxButton.YesNo, MessageBoxImage.Information);
+        if (answer != MessageBoxResult.Yes) return false;
+
+        if (noticePath is not null)
+        {
+            try
+            {
+                Directory.CreateDirectory(dataDirectory!);
+                File.WriteAllText(noticePath, "Shown once before live capture elevation.\n");
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        }
+        return true;
     }
 
     private static string? ResolveGameDirectory(Process game)

@@ -14,6 +14,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <Product>Sora 2 Details</Product>
+    <AssemblyTitle>Sora 2 Details</AssemblyTitle>
+    <ApplicationIcon>assets\sora2-details.ico</ApplicationIcon>
     <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

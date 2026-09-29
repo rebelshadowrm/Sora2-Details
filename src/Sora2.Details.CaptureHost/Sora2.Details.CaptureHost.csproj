@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Product>Sora 2 Details</Product>
+    <AssemblyTitle>Sora 2 Details Capture</AssemblyTitle>
+    <ApplicationIcon>..\Sora2.Details.Desktop\assets\sora2-details.ico</ApplicationIcon>
+  </PropertyGroup>
+</Project>
