@@ -1,11 +1,12 @@
 using System.IO;
 using System.Text.Json;
+using Sora2.Details.Core;
 
 namespace Sora2.Details.Desktop;
 
 internal sealed class EncounterHistorySettings
 {
-    public bool BossFocused { get; set; }
+    public HistoryFilterMode FilterMode { get; set; } = HistoryFilterMode.Confirmed;
     public HashSet<string> BossEncounterIds { get; set; } = [];
     public HashSet<string> RegularEncounterIds { get; set; } = [];
 
@@ -34,9 +35,22 @@ internal sealed class EncounterHistorySettings
         try
         {
             if (!File.Exists(PathName)) return new();
-            var settings = JsonSerializer.Deserialize<EncounterHistorySettings>(File.ReadAllText(PathName));
-            return settings is { BossEncounterIds: not null, RegularEncounterIds: not null }
-                ? settings : new();
+            var json = File.ReadAllText(PathName);
+            var settings = JsonSerializer.Deserialize<EncounterHistorySettings>(json);
+            if (settings is not { BossEncounterIds: not null, RegularEncounterIds: not null }) return new();
+
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty(nameof(FilterMode), out _) &&
+                root.TryGetProperty("BossFocused", out var legacyBossFocused) &&
+                legacyBossFocused.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                settings.FilterMode = legacyBossFocused.GetBoolean()
+                    ? HistoryFilterMode.Confirmed : HistoryFilterMode.Unfiltered;
+            }
+            if (!Enum.IsDefined(typeof(HistoryFilterMode), settings.FilterMode))
+                settings.FilterMode = HistoryFilterMode.Confirmed;
+            return settings;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {

@@ -57,3 +57,11 @@ per battle). This preserves evidence for a direct runtime key search; it does
 not choose a name. A later bridge lookup result cannot safely request memory
 after the breakpoint has resumed. AI-skill-ID failures still need a separate
 action-context hypothesis before expanding their memory reads.
+
+## Latest-session follow-up, 2026-09-30
+
+The latest local trace was `probe-session-834a83dee4a249168a703c35ff7f8cbd.jsonl`; it ended with `target_exited` at 03:23:30 Central. Its latest encounter ran 03:10:17–03:19:02 and contains 119 projected events. All 11 actor instances have labels, including seven enemies with unique exact English stat-signature matches. The unresolved actor-source cases are the HP setter writes: 18 events still carry `sourceId: null` and `hp-write-without-attack-result`.
+
+The captured stack snapshots for those HP writes share the setter path but do not contain a verified healer, move, or item ID. Repeated heal amounts and caller addresses are useful grouping clues, not attribution evidence. These events remain source-unknown. The same encounter has 21 enemy damage results whose low IDs are absent from the exact matched unit's AI `SkillTable`, plus eight derived knockout rows carrying those same lookup failures. It also has three party results using packed ID `0xFFFF05F8`, which has no exact English `t_skill` row. They remain unnamed; IDs from other monsters' scripts are not interchangeable.
+
+Three Brute Angler results did resolve to `? Lightning Splash` through the unique `mon5244` AI row for ID 1000. The `?` remains because the actor unit key comes from the provisional stat-signature match.

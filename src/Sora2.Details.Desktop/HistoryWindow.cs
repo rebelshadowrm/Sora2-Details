@@ -24,28 +24,47 @@ public sealed class HistoryWindow : Window
     {
         _encounters = encounters;
         _settings = settings;
-        Title = settings.BossFocused ? "Boss-focused history" : "Encounter history";
+        Title = $"{EncounterHistoryView.FilterModeLabel(settings.FilterMode)} history";
         Width = 650;
         Height = 440;
         Background = new SolidColorBrush(Color.FromRgb(27, 30, 35));
         Foreground = Brushes.White;
         var panel = new DockPanel { Margin = new Thickness(14) };
-        var filter = new CheckBox { Content = "Bosses + unclassified", IsChecked = settings.BossFocused,
-            Margin = new Thickness(0, 0, 0, 10),
-            ToolTip = "Keeps uncertain fights visible; hides only fights you marked regular." };
-        filter.Checked += (_, _) => SetBossFocused(true);
-        filter.Unchecked += (_, _) => SetBossFocused(false);
+        var filter = new ComboBox { Margin = new Thickness(0, 0, 0, 10), MinWidth = 230 };
+        foreach (var (mode, tooltip) in new[]
+        {
+            (HistoryFilterMode.LikelyBosses,
+                "Overconfident best effort: show confirmed bosses and name/+ candidates; hide unclassified fights."),
+            (HistoryFilterMode.Confirmed,
+                "Strict confirmation: only manual Boss marks count as confirmed. Fail-open keeps tentative and unknown fights visible; only marked Regular fights are hidden."),
+            (HistoryFilterMode.Unfiltered,
+                "Show every recorded fight, including fights marked Regular.")
+        })
+        {
+            filter.Items.Add(new ComboBoxItem
+            {
+                Content = EncounterHistoryView.FilterModeLabel(mode),
+                Tag = mode,
+                ToolTip = tooltip
+            });
+        }
+        filter.SelectedItem = filter.Items.Cast<ComboBoxItem>()
+            .First(item => item.Tag is HistoryFilterMode mode && mode == settings.FilterMode);
+        filter.SelectionChanged += (_, _) =>
+        {
+            if (filter.SelectedItem is ComboBoxItem { Tag: HistoryFilterMode mode }) SetFilterMode(mode);
+        };
         DockPanel.SetDock(filter, Dock.Top);
         panel.Children.Add(filter);
         var actions = new StackPanel { Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 10, 0, 0) };
-        _markBoss = new Button { Content = "Mark boss", Padding = new Thickness(8),
+        _markBoss = new Button { Content = "Confirm boss", Padding = new Thickness(8),
             IsEnabled = false, ToolTip = "Confirm this encounter as a boss fight" };
         _markBoss.Click += (_, _) => MarkSelection(BossClassification.MarkedBoss);
         actions.Children.Add(_markBoss);
         _markRegular = new Button { Content = "Mark regular", Margin = new Thickness(8, 0, 0, 0),
             Padding = new Thickness(8), IsEnabled = false,
-            ToolTip = "Hide this fight from boss-focused history" };
+            ToolTip = "Hide this fight in Likely bosses and Confirmed modes; Unfiltered still shows it" };
         _markRegular.Click += (_, _) => MarkSelection(BossClassification.MarkedRegular);
         actions.Children.Add(_markRegular);
         _clearMark = new Button { Content = "Clear mark", Margin = new Thickness(8, 0, 0, 0),
@@ -92,10 +111,10 @@ public sealed class HistoryWindow : Window
         if (SelectedEncounter is not null) DialogResult = true;
     }
 
-    private void SetBossFocused(bool value)
+    private void SetFilterMode(HistoryFilterMode mode)
     {
-        _settings.BossFocused = value;
-        Title = value ? "Boss-focused history" : "Encounter history";
+        _settings.FilterMode = mode;
+        Title = $"{EncounterHistoryView.FilterModeLabel(mode)} history";
         SaveSettings();
         RefreshItems();
     }
@@ -113,7 +132,7 @@ public sealed class HistoryWindow : Window
     private void RefreshItems(string? selectedId = null)
     {
         selectedId ??= SelectedEncounter?.Id;
-        _list.ItemsSource = EncounterHistoryView.Visible(_encounters, _settings.BossFocused,
+        _list.ItemsSource = EncounterHistoryView.Visible(_encounters, _settings.FilterMode,
                 _settings.BossEncounterIds, _settings.RegularEncounterIds)
             .Select(encounter =>
             {

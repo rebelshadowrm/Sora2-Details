@@ -1,4 +1,10 @@
-# Sora 2 Details 0.2.0 preview 14
+# Sora 2 Details 0.2.0 preview 15
+
+## Boss history filters and lookup refinements
+
+- Encounter history now has **Likely bosses (best effort)**, **Confirmed (fail-open)**, and **Unfiltered** modes. Confirmed is the default; uncertain encounters stay visible unless explicitly marked Regular.
+- Exact-name and `+` enemy candidates are labeled tentative. Confirmed boss entries name recognized boss actors without their adds; `+` candidate entries name the `+` actors. Manual encounter marks and the selected mode stay local.
+- The live lookup names a narrowly corroborated Counter result. Heal writes without a verified source remain unattributed, and the combat log remains partial.
 
 ## Code signing policy
 
@@ -26,7 +32,7 @@ See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status
 - Unresolved move results now retain a specific lookup reason in saved encounters and result details.
 - The raw capture records bounded extra memory for positive HP writes, unreadable effect descriptors, and enemy stat signatures with no unique table match. This research evidence may help identify missing heal and enemy links; those labels remain unverified.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 14 with the meter's update button.
+**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 15 with the meter's update button.
 
 ## Using the preview
 

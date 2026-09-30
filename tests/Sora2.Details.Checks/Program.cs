@@ -6,24 +6,58 @@ var fight = encounters.Single(e => e.Id == "sample-001");
 var markedBosses = new HashSet<string> { fight.Id };
 var markedRegular = new HashSet<string> { "sample-002" };
 var noMarks = new HashSet<string>();
-Check(EncounterHistoryView.Visible(encounters, true, markedBosses, markedRegular).Count ==
-      encounters.Count - 1, "boss-focused history retains unclassified fights");
-Check(!EncounterHistoryView.Visible(encounters, true, markedBosses, markedRegular)
-    .Any(e => e.Id == "sample-002"), "boss-focused history hides only marked regular fights");
+var bossFocused = EncounterHistoryView.Visible(encounters, true, markedBosses, markedRegular);
+Check(bossFocused.Count == encounters.Count - 1 &&
+      bossFocused.Any(e => e.Id == fight.Id) &&
+      bossFocused.Any(e => e.Id == "sample-003") &&
+      bossFocused.All(e => e.Id != "sample-002"),
+    "boss-focused history keeps unknown fights visible and hides marked regular fights");
 Check(EncounterHistoryView.Visible(encounters, false, markedBosses, markedRegular).Count == encounters.Count,
     "all-fights history retains every encounter");
-Check(EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("★ BOSS") &&
+Check(EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("CONFIRMED BOSS") &&
       EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("Wolf A") &&
       EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("Wolf B"),
     "boss history label includes marker and enemy name");
-var walterFight = fight with { Actors = [new Actor("walter", "Walter", CombatTeam.Enemy,
+var walterFight = fight with { Id = "walter-candidate", Actors = [new Actor("walter", "Walter", CombatTeam.Enemy,
     LookupUnitId: "chr0120_e00")] };
 Check(EncounterHistoryView.Classify(walterFight, noMarks, noMarks) == BossClassification.CatalogBossCandidate,
     "catalog boss name is highlighted from exact English table label");
-var plusFight = fight with { Actors = [new Actor("slug", "Sticky Slug+", CombatTeam.Enemy)] };
+var plusFight = fight with { Id = "plus-candidate", Actors = [new Actor("slug", "Sticky Slug+", CombatTeam.Enemy)] };
 Check(EncounterHistoryView.Classify(plusFight, noMarks, noMarks) == BossClassification.PlusMiniBossCandidate,
     "plus-suffixed enemy is a mini-boss candidate");
-Check(EncounterHistoryView.Classify(walterFight, noMarks, new HashSet<string> { fight.Id }) ==
+var unknownCandidateFight = fight with { Id = "unknown-fight", Actors = [new Actor("unknown", "? Enemy 1 (ID 60001)", CombatTeam.Enemy)] };
+var failOpenHistory = EncounterHistoryView.Visible([walterFight, plusFight, unknownCandidateFight], true,
+    noMarks, noMarks);
+Check(failOpenHistory.Count == 3 && failOpenHistory.Any(e => e.Id == walterFight.Id) &&
+      failOpenHistory.Any(e => e.Id == plusFight.Id) &&
+      failOpenHistory.Any(e => e.Id == unknownCandidateFight.Id),
+    "boss-focused history keeps candidates and unknown fights visible by default");
+var likelyBossHistory = EncounterHistoryView.Visible([walterFight, plusFight, unknownCandidateFight],
+    HistoryFilterMode.LikelyBosses, noMarks, noMarks);
+Check(likelyBossHistory.Count == 2 && likelyBossHistory.Any(e => e.Id == walterFight.Id) &&
+      likelyBossHistory.Any(e => e.Id == plusFight.Id) &&
+      likelyBossHistory.All(e => e.Id != unknownCandidateFight.Id),
+    "likely-boss mode keeps boss-name and plus candidates while hiding unclassified fights");
+var markedPlusRegular = new HashSet<string> { plusFight.Id };
+var confirmedModeHistory = EncounterHistoryView.Visible([walterFight, plusFight, unknownCandidateFight],
+    HistoryFilterMode.Confirmed, noMarks, markedPlusRegular);
+Check(confirmedModeHistory.Count == 2 && confirmedModeHistory.Any(e => e.Id == walterFight.Id) &&
+      confirmedModeHistory.Any(e => e.Id == unknownCandidateFight.Id) &&
+      confirmedModeHistory.All(e => e.Id != plusFight.Id),
+    "confirmed fail-open mode hides only explicitly marked regular fights");
+var unfilteredHistory = EncounterHistoryView.Visible([walterFight, plusFight, unknownCandidateFight],
+    HistoryFilterMode.Unfiltered, noMarks, markedPlusRegular);
+Check(unfilteredHistory.Count == 3 && unfilteredHistory.Any(e => e.Id == plusFight.Id),
+    "unfiltered mode includes explicitly marked regular fights");
+Check(EncounterHistoryView.Visible([unknownCandidateFight], true,
+    new HashSet<string> { unknownCandidateFight.Id }, noMarks)
+    .Single().Id == unknownCandidateFight.Id, "manual boss mark keeps an otherwise unknown fight visible");
+Check(EncounterHistoryView.Visible([unknownCandidateFight], HistoryFilterMode.LikelyBosses,
+    new HashSet<string> { unknownCandidateFight.Id }, noMarks).Single().Id == unknownCandidateFight.Id,
+    "likely-boss mode keeps manually confirmed bosses");
+Check(EncounterHistoryView.Visible([walterFight], true, noMarks, new HashSet<string> { walterFight.Id }).Count == 0,
+    "manual regular mark excludes a catalog boss candidate");
+Check(EncounterHistoryView.Classify(walterFight, noMarks, new HashSet<string> { walterFight.Id }) ==
       BossClassification.MarkedRegular, "manual regular mark overrides catalog candidate");
 var repeatedEnemies = fight with { Actors = [
     new Actor("wolf-1", "Wolf", CombatTeam.Enemy),
@@ -31,6 +65,19 @@ var repeatedEnemies = fight with { Actors = [
     new Actor("unknown-1", "? Enemy 3 (ID 60003)", CombatTeam.Enemy)] };
 Check(EncounterHistoryView.EnemySummary(repeatedEnemies) == "Wolf ×2, Unknown enemy",
     "history groups repeated and unresolved enemies");
+var bossWithAdds = fight with { Id = "confirmed-boss-with-adds", Actors = [
+    new Actor("walter", "Walter", CombatTeam.Enemy),
+    new Actor("add", "Wolf", CombatTeam.Enemy)] };
+Check(EncounterHistoryView.Describe(bossWithAdds, BossClassification.MarkedBoss).Contains("Walter") &&
+      !EncounterHistoryView.Describe(bossWithAdds, BossClassification.MarkedBoss).Contains("Wolf"),
+    "confirmed boss entry names the known boss without its adds");
+var plusWithAdds = plusFight with { Actors = [
+    new Actor("slug", "Sticky Slug+", CombatTeam.Enemy),
+    new Actor("add", "Wolf", CombatTeam.Enemy)] };
+Check(EncounterHistoryView.Describe(plusWithAdds, BossClassification.PlusMiniBossCandidate)
+          .Contains("Sticky Slug+") &&
+      !EncounterHistoryView.Describe(plusWithAdds, BossClassification.PlusMiniBossCandidate).Contains("Wolf"),
+    "plus-candidate entry names the plus mob without its adds");
 
 var playerDealt = EncounterProjection.Rows(fight, MeterMode.PlayerDamage).ToDictionary(row => row.Key);
 var enemyDealt = EncounterProjection.Rows(fight, MeterMode.EnemyDamage).ToDictionary(row => row.Key);

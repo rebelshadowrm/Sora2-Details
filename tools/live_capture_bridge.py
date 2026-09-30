@@ -108,8 +108,26 @@ def lookup_live_move_with_reason(attack, skill_rows_by_id):
     matches = [row for row in candidates
                if all(struct.unpack_from("<I", descriptor, offset)[0] == row[f"rawParam{offset:02x}"]
                       for offset in (0x10, 0x20, 0x30))]
+    move_name_provenance = "live-effect-descriptor/exact-English-t_skill"
     if not matches:
-        return None, "skill-parameters-mismatch"
+        # The 2026-09-30 exact-build trace carries Counter's unique packed ID
+        # and matching Param10/Param20, while the live Param30 is 0xC and the
+        # static Counter row stores zero. The unique ID still resolves the
+        # name; the returned table Param30 remains zero, so it cannot classify
+        # this hit's damage.
+        counter = candidates[0] if len(candidates) == 1 else None
+        if (packed_id == 0xFFFF0042 and counter is not None
+                and counter["name"] == "Counter"
+                and counter["animation"] == "AniBtlCounterAttack"
+                and struct.unpack_from("<I", descriptor, 0x10)[0] == counter["rawParam10"]
+                and struct.unpack_from("<I", descriptor, 0x20)[0] == counter["rawParam20"]
+                and counter["rawParam30"] == 0
+                and struct.unpack_from("<I", descriptor, 0x30)[0] == 0xC):
+            matches = [counter]
+            move_name_provenance = (
+                "live-effect-ID/exact-English-t_skill/Counter-rawParam30-variant")
+        else:
+            return None, "skill-parameters-mismatch"
     source_id = attack.get("source_actor_id")
     if isinstance(source_id, int) and 0 <= source_id < 1000:
         matches = [row for row in matches if row["ownerId"] in (source_id, 65535)]
@@ -122,7 +140,7 @@ def lookup_live_move_with_reason(attack, skill_rows_by_id):
     row = matches[0]
     return ({"id": f"0x{packed_id:08X}", "name": row["name"],
              "rawParam30": row["rawParam30"],
-             "provenance": "live-effect-descriptor/exact-English-t_skill"}, None)
+             "provenance": move_name_provenance}, None)
 
 
 def lookup_live_move(attack, skill_rows_by_id):

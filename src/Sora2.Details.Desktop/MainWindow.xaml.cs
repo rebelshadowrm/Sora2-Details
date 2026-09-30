@@ -358,13 +358,8 @@ public partial class MainWindow : Window
             ? EncounterHistoryView.Classify(currentEncounter, _historySettings.BossEncounterIds,
                 _historySettings.RegularEncounterIds) : BossClassification.Unclassified;
         EncounterLabel.Text = _selectedEncounter is { } shown
-            ? (encounterClassification switch
-            {
-                BossClassification.MarkedBoss => "★ BOSS · ",
-                BossClassification.CatalogBossCandidate => "★ Boss candidate · ",
-                BossClassification.PlusMiniBossCandidate => "✦ Mini-boss candidate · ",
-                _ => ""
-            }) + shown.Label :
+            ? (encounterClassification == BossClassification.Unclassified
+                ? "" : EncounterHistoryView.ClassificationMarker(encounterClassification)) + shown.Label :
             (resetWaiting ? "Session reset · waiting for battle" :
                 waiting ? "Waiting for next command battle" : "No encounter selected");
         if (_selectedEncounter is null)
@@ -483,11 +478,15 @@ public partial class MainWindow : Window
             menu.Items.Add(new Separator());
         }
         var show = new MenuItem { Header = "History view" };
-        foreach (var bossFocused in new[] { false, true })
+        foreach (var mode in Enum.GetValues<HistoryFilterMode>())
         {
-            var choice = new MenuItem { Header = bossFocused ? "Bosses + unclassified" : "All fights",
-                IsCheckable = true, IsChecked = _historySettings.BossFocused == bossFocused };
-            choice.Click += (_, _) => SetBossFocusedHistory(bossFocused);
+            var choice = new MenuItem
+            {
+                Header = EncounterHistoryView.FilterModeLabel(mode),
+                IsCheckable = true,
+                IsChecked = _historySettings.FilterMode == mode
+            };
+            choice.Click += (_, _) => SetHistoryFilterMode(mode);
             show.Items.Add(choice);
         }
         menu.Items.Add(show);
@@ -495,7 +494,7 @@ public partial class MainWindow : Window
         {
             var classify = new MenuItem { Header = "Classify selected fight" };
             foreach (var (header, mark) in new[] {
-                ("Mark boss", BossClassification.MarkedBoss),
+                ("Confirm boss", BossClassification.MarkedBoss),
                 ("Mark regular", BossClassification.MarkedRegular),
                 ("Clear manual mark", BossClassification.Unclassified) })
             {
@@ -509,7 +508,7 @@ public partial class MainWindow : Window
             menu.Items.Add(classify);
         }
         menu.Items.Add(new Separator());
-        var visible = EncounterHistoryView.Visible(_encounters, _historySettings.BossFocused,
+        var visible = EncounterHistoryView.Visible(_encounters, _historySettings.FilterMode,
             _historySettings.BossEncounterIds, _historySettings.RegularEncounterIds);
         foreach (var encounter in EncounterProjection.Recent(visible))
         {
@@ -543,10 +542,11 @@ public partial class MainWindow : Window
         OpenMenu(menu, (Button)sender);
     }
 
-    private void SetBossFocusedHistory(bool bossFocused)
+    private void SetHistoryFilterMode(HistoryFilterMode mode)
     {
-        _historySettings.BossFocused = bossFocused;
+        _historySettings.FilterMode = mode;
         SaveHistorySettings();
+        RenderMeter();
     }
 
     private void MarkSelectedEncounter(BossClassification mark)
