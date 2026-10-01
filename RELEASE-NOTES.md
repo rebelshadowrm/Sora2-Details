@@ -1,16 +1,25 @@
-# Sora 2 Details 0.2.0 preview 15
+# Sora 2 Details 0.2.0 preview 16
 
-## Boss history filters and lookup refinements
+## Capture controls and startup
+
+- The meter now shows capture state without a separate capture button. Start and stop capture from the tray menu.
+- The status reads **Starting capture** while connecting and **Capturing** once the session is active.
+- The startup note about battle-data permission is shorter and uses less technical language.
+- Live command-battle capture remains partial; support actions, misses, some move names, and critical status are not fully captured.
+
+## Preview 15
+
+### Boss history filters and lookup refinements
 
 - Encounter history now has **Likely bosses (best effort)**, **Confirmed (fail-open)**, and **Unfiltered** modes. Confirmed is the default; uncertain encounters stay visible unless explicitly marked Regular.
 - Exact-name and `+` enemy candidates are labeled tentative. Confirmed boss entries name recognized boss actors without their adds; `+` candidate entries name the `+` actors. Manual encounter marks and the selected mode stay local.
 - The live lookup names a narrowly corroborated Counter result. Heal writes without a verified source remain unattributed, and the combat log remains partial.
 
-## Code signing policy
+### Code signing policy
 
 See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status, roles, privacy and network behavior, build provenance, and capture security. This Windows preview is unsigned while SignPath Foundation approval and configuration are pending. See [uninstall instructions](README.md#uninstall) in the project README.
 
-## Resident tray lifecycle
+### Resident tray lifecycle
 
 - Sora 2 Details requests administrator approval once at startup and remains resident in the system tray as the capture owner. CaptureHost, Python, the bridge, and the updater inherit its approved process token.
 - A game already running at startup starts capture after approval. If Trails starts later, the tray notification offers **Start capture?** and waits for the player to choose Start; game exit detaches helpers and returns to a waiting tray state.
@@ -18,7 +27,7 @@ See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status
 - An update during capture explains the detach and restart, waits for confirmed helper cleanup, then updates and restarts with the launch arguments and data directory preserved.
 - Production no longer fills an empty meter with sample replay rows. Saved history remains available from the tray when no live session is active.
 
-## Capture improvements in preview 13
+### Capture improvements in preview 13
 
 - Encounter history can focus on boss and unclassified fights, while preserving marked regular fights under All fights. Candidate labels remain cautious; manual Boss and Regular marks are available and persist across app updates.
 - The app explains the live-capture requirement and requests Windows administrator approval at startup, before the main meter appears. The capture host, Python probe, bridge, and updater inherit the approved process context without separate prompts.
@@ -27,24 +36,24 @@ See the [Code signing policy](CODE-SIGNING-POLICY.md) for current signing status
 - Installer builds support release signing and a `-RequireSigning` gate. This preview is unsigned, so Windows may show Unknown publisher or SmartScreen warnings.
 - Added packaging/readiness checks and a distribution UX audit. Interactive UAC and installed update validation were not available in the build environment.
 
-## What changed in this preview
+### What changed in preview 15
 
 - Unresolved move results now retain a specific lookup reason in saved encounters and result details.
 - The raw capture records bounded extra memory for positive HP writes, unreadable effect descriptors, and enemy stat signatures with no unique table match. This research evidence may help identify missing heal and enemy links; those labels remain unverified.
 
-**Normal-user download:** `Sora2.Details-win-x64-preview-Setup.exe` from this release. Existing users can apply preview 15 with the meter's update button.
+**Preview 15 download:** `Sora2.Details-win-x64-preview-Setup.exe` from the preview 15 release.
 
-## Using the preview
+### Using the preview
 
 This Windows preview provides a compact meter and durable **partial** command-battle combat log. It records observed HP changes and some attributed damaging hits; support actions, misses, some move names, and critical status remain incomplete. It is not yet a complete combat log.
 
 The installer bundles the .NET app and Python 3.13.15, so no separate runtime install is needed. Run `tools/start_probe_session.ps1 -TryUnprivileged` from a standard-user shell only for diagnostic access checks.
 
-Start the supported game, then open the meter. It requests administrator approval at startup before the main UI appears, then automatically starts a 12-hour command-battle capture in that elevated process session. Click **■** to detach early or **●** to retry capture. Start capture before entering a command battle; an already-open fight cannot be reconstructed. The meter displays saved encounters when the game is closed.
+Start the supported game, then open the meter. A short note appears before Windows asks for startup approval. Capture starts automatically when the game is already running; otherwise the app waits in the tray. Use **Stop capture** in the tray menu to end a session. Start capture before entering a command battle; an already-open fight cannot be reconstructed. The meter displays saved encounters when the game is closed.
 
 The **↻** control checks GitHub for newer previews; **↑** downloads one; if capture is active, a confirmation explains that the app will detach and restart. The updater reuses the startup-approved process session without a second prompt. Capture refuses an unverified game executable hash. Encounters, meter placement, and raw traces are kept under `%LOCALAPPDATA%\Sora2 Details` so updates preserve them. The combat log remains partial: support actions, misses, some move names, and critical status are not yet fully captured.
 
-## Earlier preview changes
+### Earlier preview changes
 
 Preview 12 split player and enemy damage dealt, and grouped taken damage by victim with attacker and move breakdowns.
 

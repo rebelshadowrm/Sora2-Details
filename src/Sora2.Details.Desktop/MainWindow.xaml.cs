@@ -69,7 +69,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await CheckForUpdatesAsync();
         Loaded += async (_, _) =>
         {
-            RefreshCaptureButton();
+            RefreshCaptureStatus();
             ReloadHistory();
             _captureStatusTimer.Start();
             _observedGamePids = GetGamePids().ToHashSet();
@@ -77,10 +77,10 @@ public partial class MainWindow : Window
             _currentGamePid = _observedGamePids.Count == 1 ? _observedGamePids.Single() : null;
             _gameDetectionTimer.Tick += GameDetectionTimer_Tick;
             _gameDetectionTimer.Start();
-            if (!_researchMode && Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") != "1")
+            if (!LiveCaptureDisabled)
             {
                 if (_observedGamePids.Count == 1)
-                    await StartCaptureAsync(_currentGamePid, startupAttach: true);
+                    await StartCaptureAsync(_currentGamePid);
                 else if (_observedGamePids.Count == 0)
                     HideMeterToTray();
                 else

@@ -22,6 +22,9 @@ public partial class MainWindow
     private bool _captureStopping;
     private string? _captureStatusError;
 
+    private bool LiveCaptureDisabled => _researchMode ||
+        Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") == "1";
+
     private static string AppVersion => VelopackLocator.Current.CurrentlyInstalledVersion?.ToString()
         ?? "development build";
 
@@ -34,25 +37,28 @@ public partial class MainWindow
     private void RefreshCaptureStatus()
     {
         var active = CaptureMayBeActive();
-        var missingBridge = active && ActiveTraceName() is null;
+        var traceName = ActiveTraceName();
+        var missingBridge = active && traceName is null && !_captureStarting;
+        var capturing = active && traceName is not null;
         var gameRunning = GetGamePids().Length > 0;
-        if (!_captureBusy) CaptureButton.Content = active ? "■" : "●";
-        var state = _researchMode ? "Research" :
+        var state = _researchMode ? "Replay" :
+            Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") == "1" ? "Meter only" :
             _captureStatusError is not null || _captureError is not null || missingBridge ? "Error" :
-            _captureStopping ? "Stopping" : _captureStarting ? "Starting" :
-            active ? "Capturing" : gameRunning ? "Ready" : "Waiting for game";
+            _captureStopping ? "Stopping capture" : capturing ? "Capturing" :
+            _captureStarting || active ? "Starting capture" : gameRunning ? "Ready" : "Waiting for game";
         DataSourceLabel.Text = state;
         DataSourceLabel.Foreground = state == "Error" ? Brushes.OrangeRed :
             state == "Capturing" ? Brushes.LightGreen : Brushes.Goldenrod;
         var detail = _captureStatusError ?? _captureError ?? (missingBridge
-            ? "The bridge is no longer running, but probe detachment is unconfirmed. Click ■ to request a clean stop."
+            ? "Capture may still be attached. Choose Stop capture from the tray to finish cleanup."
             : state switch
         {
-            "Capturing" => "Live capture is running. Closing the meter keeps Sora 2 Details in the tray. Use Stop/detach capture or click ■ to stop.",
-            "Stopping" => "Waiting for the external probe to detach.",
-            "Starting" => "Sora 2 Details is starting capture inside the elevated session approved at application startup. Capture is partial.",
-            "Research" => "Showing a research replay; no live capture is attached.",
-            "Ready" => "Trails in the Sky 2nd Chapter is running. Capture can be started from the meter or tray.",
+            "Capturing" => "Capturing partial command-battle data. Manage capture from the Sora 2 Details tray menu.",
+            "Stopping capture" => "Stopping capture and disconnecting from the game.",
+            "Starting capture" => "Connecting to the game to begin capture.",
+            "Replay" => "Showing a saved replay. Live capture is off.",
+            "Meter only" => "Meter-only mode is on. Live capture is off.",
+            "Ready" => "The game is running. Choose Start capture from the Sora 2 Details tray menu.",
             _ => "Waiting for Trails in the Sky 2nd Chapter. Saved encounters remain available from the tray."
         });
         DataSourceLabel.ToolTip = $"Sora 2 Details {AppVersion}\n{state}: {detail}\nClick for details.";
@@ -66,28 +72,15 @@ public partial class MainWindow
                 ? MessageBoxImage.Warning : MessageBoxImage.Information);
     }
 
-    private async void CaptureButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_captureBusy || _updateBusy) return;
-        if (CaptureButton.Content?.ToString() == "■")
-        {
-            await StopCaptureAsync();
-            return;
-        }
-        await StartCaptureAsync();
-    }
-
     private async Task StopCaptureAsync()
     {
         if (_captureBusy || _updateBusy) return;
         _captureBusy = true;
         _captureStopping = true;
-        CaptureButton.ToolTip = "Detaching capture...";
         RefreshCaptureStatus();
         try
         {
             var detached = await EnsureCaptureDetachedAsync();
-            CaptureButton.ToolTip = detached ? "Capture detached." : "Capture cleanup is still pending; Sora 2 Details remains resident.";
             if (detached)
             {
                 _captureStatusError = null;
@@ -113,20 +106,20 @@ public partial class MainWindow
         }
     }
 
-    private async Task StartCaptureAsync(int? expectedPid = null, bool startupAttach = false)
+    private async Task StartCaptureAsync(int? expectedPid = null)
     {
         if (_updateBusy) return;
         if (_captureBusy || ActiveTraceName() is not null) return;
+        if (LiveCaptureDisabled) return;
         if (CaptureMayBeActive())
         {
-            SetCaptureError("An earlier probe has no confirmed detach record. Click Stop before starting another capture.");
+            SetCaptureError("The previous capture hasn't finished closing. Choose Stop capture from the tray and try again.");
             return;
         }
         var launcher = FindLauncher();
         if (launcher is null)
         {
-            CaptureButton.ToolTip = "Capture launcher is missing from this package.";
-            SetCaptureError(CaptureButton.ToolTip.ToString()!);
+            SetCaptureError("Capture could not start because a required file is missing.");
             return;
         }
         var games = Process.GetProcessesByName("sora_2nd");
@@ -136,16 +129,16 @@ public partial class MainWindow
         {
             if (games.Length != 1)
             {
-                CaptureButton.ToolTip = games.Length == 0
-                    ? "Start the game before beginning capture."
-                    : "Capture needs exactly one running game process.";
-                if (games.Length > 1) SetCaptureError(CaptureButton.ToolTip.ToString()!);
+                if (games.Length > 1)
+                    SetCaptureError("More than one game process is running. Close the extra one and try again.");
+                else
+                    RefreshCaptureStatus();
                 return;
             }
             targetPid = games[0].Id;
             if (expectedPid is { } expected && expected != targetPid)
             {
-                SetCaptureError("The detected game process changed before capture could attach. Wait for the current process list, then try Start capture again.");
+                SetCaptureError("The game changed before capture could start. Try again from the tray.");
                 return;
             }
             gameDirectory = ResolveGameDirectory(games[0]);
@@ -165,8 +158,7 @@ public partial class MainWindow
             };
             if (picker.ShowDialog(this) != true)
             {
-                CaptureButton.ToolTip = "Capture not started. Select sora_2nd.exe to locate the game.";
-                SetCaptureError(CaptureButton.ToolTip.ToString()!);
+                SetCaptureError("The game location wasn't selected, so capture didn't start.");
                 return;
             }
             gameDirectory = Path.GetDirectoryName(picker.FileName);
@@ -175,9 +167,6 @@ public partial class MainWindow
         _captureBusy = true;
         _captureStarting = true;
         _currentGamePid = targetPid;
-        CaptureButton.ToolTip = startupAttach
-            ? "Attaching to the game that was already running at startup. Debugger state is installed temporarily for observation."
-            : "Starting partial capture in the elevated session approved at application startup.";
         RefreshCaptureStatus();
         try
         {
@@ -210,9 +199,6 @@ public partial class MainWindow
             await process.WaitForExitAsync();
             var output = (await stdout).Trim();
             var error = (await stderr).Trim();
-            CaptureButton.ToolTip = process.ExitCode == 0
-                ? "Partial command-battle capture is running. Start before entering a fight."
-                : $"Capture could not start: {(string.IsNullOrEmpty(error) ? output : error)}";
             if (process.ExitCode == 0)
             {
                 RememberGameDirectory(gameDirectory);
@@ -220,13 +206,11 @@ public partial class MainWindow
                 _followNewest = true;
                 ReloadHistory();
             }
-            else SetCaptureError(CaptureButton.ToolTip.ToString()!);
-            CaptureButton.Content = process.ExitCode == 0 ? "■" : "●";
+            else SetCaptureError($"Capture could not start: {(string.IsNullOrEmpty(error) ? output : error)}");
         }
         catch (Exception exception)
         {
-            CaptureButton.ToolTip = $"Capture could not start: {exception.Message}";
-            SetCaptureError(CaptureButton.ToolTip.ToString()!);
+            SetCaptureError($"Capture could not start: {exception.Message}");
         }
         finally
         {
@@ -366,9 +350,8 @@ public partial class MainWindow
             if (captureActive)
             {
                 var answer = MessageBox.Show(this,
-                    "Updating now will stop live capture, detach from the game, install the update, and restart Sora 2 Details. " +
-                    "If Trails is still running, capture will start again after restart. " +
-                    "You can wait until the current battle is over. The updater will reuse the startup-approved elevated session and will not ask for separate approval.\n\n" +
+                    "Updating now will stop capture, install the update, and restart Sora 2 Details. " +
+                    "Capture will resume if the game is still running. You can wait until the current battle ends.\n\n" +
                     "Update now?",
                     "Update Sora 2 Details", MessageBoxButton.YesNo, MessageBoxImage.Warning,
                     MessageBoxResult.No);
@@ -498,11 +481,6 @@ public partial class MainWindow
         {
             return false;
         }
-    }
-
-    private void RefreshCaptureButton()
-    {
-        RefreshCaptureStatus();
     }
 
     private static bool CaptureMayBeActive()

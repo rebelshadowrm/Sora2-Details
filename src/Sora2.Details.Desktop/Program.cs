@@ -25,13 +25,9 @@ internal static class Program
         {
             if (AnotherApplicationInstanceIsRunning()) return;
             MessageBox.Show(
-                "Real-game testing found OpenProcess(PROCESS_VM_READ) returns ERROR_ACCESS_DENIED (5) " +
-                "in a standard-user session. Sora 2 Details requests Windows administrator approval now, " +
-                "before the meter opens. It reads game memory and does not write game memory; it briefly " +
-                "sets and restores hardware breakpoint registers on game threads to observe battle events. " +
-                "Capture helpers and in-app updates reuse this approved process session, so they will not " +
-                "ask separately.",
-                "Sora 2 Details startup permissions", MessageBoxButton.OK, MessageBoxImage.Information);
+                "Sora 2 Details needs permission to read battle data. " +
+                "Windows will ask for approval before the app opens.",
+                "Sora 2 Details", MessageBoxButton.OK, MessageBoxImage.Information);
             if (StartElevated(dataDirectory, applicationArgs, startupArgs)) return;
             return;
         }
@@ -152,7 +148,7 @@ internal static class Program
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            MessageBox.Show("Startup approval was canceled. Sora 2 Details closed without starting capture.",
+            MessageBox.Show("Sora 2 Details closed because approval was canceled.",
                 "Sora 2 Details", MessageBoxButton.OK, MessageBoxImage.Information);
             return false;
         }

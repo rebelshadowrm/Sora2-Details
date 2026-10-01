@@ -38,10 +38,10 @@ public partial class MainWindow
             _trayHideMeter.Click += (_, _) => Dispatcher.BeginInvoke(HideMeterToTray);
             _trayMenu.Items.Add(_trayHideMeter);
             _trayMenu.Items.Add(new Forms.ToolStripSeparator());
-            _trayStartCapture = new Forms.ToolStripMenuItem("Start/attach capture");
+            _trayStartCapture = new Forms.ToolStripMenuItem("Start capture");
             _trayStartCapture.Click += (_, _) => Dispatcher.BeginInvoke(StartCaptureFromTray);
             _trayMenu.Items.Add(_trayStartCapture);
-            _trayStopCapture = new Forms.ToolStripMenuItem("Stop/detach capture");
+            _trayStopCapture = new Forms.ToolStripMenuItem("Stop capture");
             _trayStopCapture.Click += (_, _) => Dispatcher.BeginInvoke(() => _ = StopCaptureAsync());
             _trayMenu.Items.Add(_trayStopCapture);
             _trayMenu.Items.Add(new Forms.ToolStripSeparator());
@@ -117,8 +117,8 @@ public partial class MainWindow
     private void ShowGameDetectedNotification()
     {
         if (_trayIcon?.Visible != true) return;
-        _trayIcon.ShowBalloonTip(8000, "Trails detected — Start capture?",
-            "Click this notification or choose Start/attach capture from the Sora 2 Details tray menu.",
+        _trayIcon.ShowBalloonTip(8000, "Game detected — Start capture?",
+            "Click this notification or choose Start capture from the tray menu.",
             Forms.ToolTipIcon.Info);
     }
 
@@ -170,7 +170,7 @@ public partial class MainWindow
         if (_trayHideMeter is not null) _trayHideMeter.Enabled = IsVisible;
         var pids = GetGamePids();
         if (_trayStartCapture is not null)
-            _trayStartCapture.Enabled = pids.Length == 1 && !_researchMode && !_captureBusy && !_updateBusy && !CaptureMayBeActive();
+            _trayStartCapture.Enabled = pids.Length == 1 && !LiveCaptureDisabled && !_captureBusy && !_updateBusy && !CaptureMayBeActive();
         if (_trayStopCapture is not null)
             _trayStopCapture.Enabled = !_captureBusy && !_updateBusy && CaptureMayBeActive();
         if (_trayIcon is not null)
