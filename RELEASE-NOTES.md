@@ -3,7 +3,7 @@
 ## Shutdown, settings, and effect research
 
 - Fixed Exit during live capture: both **X → Exit** and tray **Exit Sora 2 Details** now close the application after the capture helpers detach. The owner confirmed both routes on the rebuilt active-capture path.
-- Settings now use readable checkbox text, a 60?100% opacity slider, and a remembered X action.
+- Settings now use readable checkbox text, a 60% to 100% opacity slider, and a remembered X action.
 - Added bounded raw capture and lookup guidance for healing and other combat effects. These traces help correlate actions with HP, EP, CP, interrupts, and non-damaging results; the combat log remains partial and unknown effects remain unverified.
 - Healing Research Test and ordinary live capture share the corrected shutdown path.
 
