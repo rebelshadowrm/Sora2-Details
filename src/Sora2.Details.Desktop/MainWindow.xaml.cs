@@ -125,23 +125,66 @@ public partial class MainWindow : Window
     {
         if (!_exitRequested)
         {
-            if (_displaySettings.CloseToTray)
+            if (_displaySettings.RememberedCloseChoice is { } rememberedChoice)
+            {
+                if (rememberedChoice == CloseWindowChoice.HideToTray)
+                {
+                    e.Cancel = true;
+                    HideMeterToTray();
+                    return;
+                }
+            }
+            else
             {
                 e.Cancel = true;
-                HideMeterToTray();
-                return;
+                var closeChoice = new CloseChoiceDialog { Owner = this };
+                if (closeChoice.ShowDialog() != true || closeChoice.Choice is not { } choice) return;
+                if (closeChoice.RememberChoice)
+                    SetDisplaySettings(_displaySettings with { RememberedCloseChoice = choice });
+                if (choice == CloseWindowChoice.HideToTray)
+                {
+                    HideMeterToTray();
+                    return;
+                }
+                e.Cancel = false;
             }
             _exitRequested = true;
+        }
+        if (_updateBusy)
+        {
+            e.Cancel = true;
+            _exitRequested = false;
+            ShowMeterFromTray();
+            MessageBox.Show(this, "Wait for the update to finish before exiting Sora 2 Details.",
+                "Update in progress", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
         }
         if (_exitAfterDetach || !File.Exists(CurrentCapturePath()) && !_captureBusy) return;
         e.Cancel = true;
         if (_captureBusy)
         {
             _closeWhenReady = true;
+            _captureStopping = true;
+            if (_captureStarting && _captureStartCancelPath is { } cancelPath)
+            {
+                try { File.WriteAllText(cancelPath, "cancel"); }
+                catch (IOException exception)
+                {
+                    SetCaptureError($"Capture startup cancellation could not be signaled: {exception.Message}");
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    SetCaptureError($"Capture startup cancellation could not be signaled: {exception.Message}");
+                }
+            }
+            if (!IsVisible) ShowMeterFromTray();
+            RefreshCaptureStatus();
+            RefreshTrayCommands();
             return;
         }
         _captureBusy = true;
         _captureStopping = true;
+        if (!IsVisible) ShowMeterFromTray();
         RefreshCaptureStatus();
         try
         {
@@ -535,17 +578,20 @@ public partial class MainWindow : Window
         var more = new MenuItem { Header = $"More history… ({visible.Count} fights)" };
         more.Click += (_, _) =>
         {
-            var history = new HistoryWindow(_encounters, _historySettings) { Owner = this };
-            if (history.ShowDialog() == true)
-            {
-                _followNewest = activeTrace is null && history.SelectedEncounter?.Id ==
-                    _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault()?.Id;
-                SelectEncounter(history.SelectedEncounter);
-            }
+            var history = new HistoryWindow(_encounters, _historySettings,
+                QuickSelectHistoryEncounter) { Owner = this };
+            history.ShowDialog();
             RenderMeter();
         };
         menu.Items.Add(more);
         OpenMenu(menu, (Button)sender);
+    }
+
+    private void QuickSelectHistoryEncounter(Encounter encounter)
+    {
+        _followNewest = ActiveTraceName() is null && encounter.Id ==
+            _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault()?.Id;
+        SelectEncounter(encounter);
     }
 
     private void SetHistoryFilterMode(HistoryFilterMode mode)
@@ -729,9 +775,5 @@ public partial class MainWindow : Window
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) => HideMeterToTray();
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_displaySettings.CloseToTray) HideMeterToTray();
-        else RequestFullExit();
-    }
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 }

@@ -1,5 +1,6 @@
 param(
     [int]$Seconds = 1800,
+    [ValidateSet('Live', 'HealingResearch')][string]$CaptureProfile = 'Live',
     [string]$PythonPath,
     [string]$GameDirectory = 'C:\Games\Trails in the Sky 2nd Chapter'
 )
@@ -60,12 +61,31 @@ if (Test-Path -LiteralPath $currentPath) {
 }
 
 $minutes = [int][Math]::Ceiling($Seconds / 60.0) + 3
-$captureAction = if ($Seconds -gt 3600) { 'session_capture' } else { 'live_capture' }
+if ($CaptureProfile -eq 'HealingResearch' -and $Seconds -gt 3600) {
+    throw 'Healing research capture supports at most 3600 seconds.'
+}
+$captureAction = if ($CaptureProfile -eq 'HealingResearch') { 'healing_capture' } elseif ($Seconds -gt 3600) { 'session_capture' } else { 'live_capture' }
 $sessionDir = Join-Path $dataDir 'probe-session'
 $readyPath = Join-Path $sessionDir 'ready.json'
 $server = Join-Path $PSScriptRoot 'elevated_probe_session.py'
 
+function Test-CaptureStartCancelled {
+    $cancelFile = $env:SORA2_DETAILS_CAPTURE_START_CANCEL_FILE
+    return -not [string]::IsNullOrWhiteSpace($cancelFile) -and (Test-Path -LiteralPath $cancelFile)
+}
+
+function Stop-ProbeSessionAfterCancelledStart {
+    try { & $PythonPath $server send stop --no-wait 2>$null | Out-Null } catch { }
+}
+
+function Assert-CaptureStartNotCancelled {
+    if (Test-CaptureStartCancelled) { throw 'Capture startup was cancelled because the app is exiting.' }
+}
+
+Assert-CaptureStartNotCancelled
+
 function Start-CaptureAttempt {
+    Assert-CaptureStartNotCancelled
     try {
         & (Join-Path $PSScriptRoot 'start_probe_session.ps1') -TargetPid $games[0].Id `
             -Minutes $minutes -PythonPath $PythonPath -ErrorAction Stop | Out-Null
@@ -74,7 +94,12 @@ function Start-CaptureAttempt {
     }
 
     try {
+        if (Test-CaptureStartCancelled) {
+            Stop-ProbeSessionAfterCancelledStart
+            throw 'Capture startup was cancelled because the app is exiting.'
+        }
         $sessionReady = Get-Content -LiteralPath $readyPath -Raw | ConvertFrom-Json
+        Assert-CaptureStartNotCancelled
         $requestOutput = & $PythonPath $server send $captureAction --seconds $Seconds --no-wait
         if ($LASTEXITCODE -ne 0) { throw "Could not queue live capture: $requestOutput" }
         if (($requestOutput -join "`n") -match 'Request ([0-9a-f]+) queued') {
@@ -97,6 +122,7 @@ function Start-CaptureAttempt {
         } | ConvertTo-Json | Set-Content -LiteralPath $currentPath -Encoding UTF8
         $resultPath = Join-Path $sessionDir "results\$attemptRequestId.json"
         for ($attempt = 0; $attempt -lt 100; $attempt++) {
+            Assert-CaptureStartNotCancelled
             if (Test-Path -LiteralPath $attemptTrace) {
                 $traceText = Get-Content -LiteralPath $attemptTrace -Raw
                 if ($traceText -match '"kind": "armed"') {
@@ -149,23 +175,27 @@ $stopFile = Join-Path $liveDir "stop-$requestId"
 # The server processes this after the bounded capture returns or its stop file is seen.
 & $PythonPath $server send stop --no-wait | Out-Null
 
-$bridge = Join-Path $PSScriptRoot 'live_capture_bridge.py'
-$arguments = '"' + $bridge + '" "' + $trace + '" --table-pac "' + $tablePac +
-    '" --script-pac "' + $scriptPac + '" --follow --max-wait-seconds ' + ($Seconds + 60)
-$bridgeStart = [Diagnostics.ProcessStartInfo]::new()
-$bridgeStart.FileName = $PythonPath
-$bridgeStart.Arguments = $arguments
-$bridgeStart.WorkingDirectory = $root
-$bridgeStart.UseShellExecute = $false
-$bridgeStart.CreateNoWindow = $true
-$bridgeStart.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
-$bridgeProcess = [Diagnostics.Process]::Start($bridgeStart)
-if ($null -eq $bridgeProcess) { throw 'Could not start the live-capture bridge.' }
+$bridgePid = 0
+if ($CaptureProfile -eq 'Live') {
+    $bridge = Join-Path $PSScriptRoot 'live_capture_bridge.py'
+    $arguments = '"' + $bridge + '" "' + $trace + '" --table-pac "' + $tablePac +
+        '" --script-pac "' + $scriptPac + '" --follow --max-wait-seconds ' + ($Seconds + 60)
+    $bridgeStart = [Diagnostics.ProcessStartInfo]::new()
+    $bridgeStart.FileName = $PythonPath
+    $bridgeStart.Arguments = $arguments
+    $bridgeStart.WorkingDirectory = $root
+    $bridgeStart.UseShellExecute = $false
+    $bridgeStart.CreateNoWindow = $true
+    $bridgeStart.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    $bridgeProcess = [Diagnostics.Process]::Start($bridgeStart)
+    if ($null -eq $bridgeProcess) { throw 'Could not start the live-capture bridge.' }
+    $bridgePid = $bridgeProcess.Id
+}
 
 @{
     requestId = $requestId
     targetPid = $games[0].Id
-    bridgePid = $bridgeProcess.Id
+    bridgePid = $bridgePid
     desktopPid = $PID
     serverPid = $captureAttempt.ServerPid
     hostPid = $captureAttempt.HostPid
@@ -192,7 +222,7 @@ $desktopProcess = if ($runningDesktop.Count -eq 1) {
 @{
     requestId = $requestId
     targetPid = $games[0].Id
-    bridgePid = $bridgeProcess.Id
+    bridgePid = $bridgePid
     desktopPid = $desktopProcess.Id
     serverPid = $captureAttempt.ServerPid
     hostPid = $captureAttempt.HostPid
@@ -201,6 +231,10 @@ $desktopProcess = if ($runningDesktop.Count -eq 1) {
     trace = $trace
     stopFile = $stopFile
 } | ConvertTo-Json | Set-Content -LiteralPath $currentPath -Encoding UTF8
-Write-Output "LIVE / PARTIAL capture armed for $Seconds seconds (game PID $($games[0].Id))."
+if ($CaptureProfile -eq 'HealingResearch') {
+    Write-Output "Healing research capture armed for $Seconds seconds (game PID $($games[0].Id)); raw trace only."
+} else {
+    Write-Output "LIVE / PARTIAL capture armed for $Seconds seconds (game PID $($games[0].Id))."
+}
 Write-Output "Trace: $trace"
 Write-Output 'To detach early: .\tools\stop_live_meter.ps1'

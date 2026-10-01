@@ -1,5 +1,6 @@
 param(
     [ValidateRange(2, 12)][int]$Hours = 12,
+    [ValidateSet('Live', 'HealingResearch')][string]$CaptureProfile = 'Live',
     [switch]$MeterOnly,
     [switch]$CaptureOnly,
     [string]$GameDirectory,
@@ -8,6 +9,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $PSBoundParameters.ContainsKey('CaptureProfile') -and
+    $env:SORA2_DETAILS_CAPTURE_PROFILE -in @('Live', 'HealingResearch')) {
+    $CaptureProfile = $env:SORA2_DETAILS_CAPTURE_PROFILE
+}
 $DataDirectory = if ($DataDirectory) { [IO.Path]::GetFullPath($DataDirectory) }
     elseif ($env:SORA2_DETAILS_DATA_DIR) { [IO.Path]::GetFullPath($env:SORA2_DETAILS_DATA_DIR) }
     else { Join-Path $env:LOCALAPPDATA 'Sora2 Details' }
@@ -67,10 +72,16 @@ if (-not $isAdministrator) {
 
 if (-not $CaptureOnly) {
     if (Get-Process -Name 'Sora2.Details.Desktop' -ErrorAction SilentlyContinue) {
-        Write-Output 'Sora 2 Details is already running. Use its tray and capture controls.'
+        if ($CaptureProfile -eq 'HealingResearch') {
+            Write-Output 'Sora 2 Details is already running with its current capture profile.'
+            Write-Output 'To switch profiles, stop capture and Exit from the tray, then launch this test shortcut again.'
+        } else {
+            Write-Output 'Sora 2 Details is already running. Use its tray and capture controls.'
+        }
         exit 0
     }
-    $appArguments = @('--data-dir', $DataDirectory, '--capture-hours', [string]$Hours)
+    $appArguments = @('--data-dir', $DataDirectory, '--capture-hours', [string]$Hours,
+        '--capture-profile', $CaptureProfile)
     if ($MeterOnly) { $appArguments += '--meter-only' }
     if ($GameDirectory) { $appArguments += @('--game-directory', $GameDirectory) }
     if ($PythonPath) { $appArguments += @('--python-path', $PythonPath) }
@@ -135,4 +146,4 @@ if ($LASTEXITCODE -ne 0 -or $versionCheck -ne '1') {
 }
 
 & (Join-Path $root 'tools\start_session_logger.ps1') -Hours $Hours `
-    -PythonPath $PythonPath -GameDirectory $GameDirectory
+    -CaptureProfile $CaptureProfile -PythonPath $PythonPath -GameDirectory $GameDirectory

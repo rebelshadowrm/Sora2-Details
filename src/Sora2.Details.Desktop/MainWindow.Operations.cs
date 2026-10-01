@@ -20,6 +20,7 @@ public partial class MainWindow
     private bool _captureBusy;
     private bool _captureStarting;
     private bool _captureStopping;
+    private string? _captureStartCancelPath;
     private string? _captureStatusError;
 
     private bool LiveCaptureDisabled => _researchMode ||
@@ -170,6 +171,9 @@ public partial class MainWindow
         RefreshCaptureStatus();
         try
         {
+            var liveDirectory = Path.Combine(MeterDataDirectory.PathName, "live");
+            Directory.CreateDirectory(liveDirectory);
+            _captureStartCancelPath = Path.Combine(liveDirectory, $"start-cancel-{Guid.NewGuid():N}");
             var start = new ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false,
@@ -193,12 +197,36 @@ public partial class MainWindow
                 start.ArgumentList.Add("-PythonPath");
                 start.ArgumentList.Add(pythonPath);
             }
-            using var process = Process.Start(start) ?? throw new IOException("PowerShell did not start.");
-            var stdout = process.StandardOutput.ReadToEndAsync();
-            var stderr = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            var output = (await stdout).Trim();
-            var error = (await stderr).Trim();
+            start.Environment["SORA2_DETAILS_CAPTURE_START_CANCEL_FILE"] = _captureStartCancelPath;
+            using var process = new Process { StartInfo = start };
+            var outputBuilder = new StringBuilder();
+            var errorBuilder = new StringBuilder();
+            var outputEnded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var errorEnded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            process.OutputDataReceived += (_, eventArgs) =>
+            {
+                if (eventArgs.Data is null) outputEnded.TrySetResult(true);
+                else lock (outputBuilder) outputBuilder.AppendLine(eventArgs.Data);
+            };
+            process.ErrorDataReceived += (_, eventArgs) =>
+            {
+                if (eventArgs.Data is null) errorEnded.TrySetResult(true);
+                else lock (errorBuilder) errorBuilder.AppendLine(eventArgs.Data);
+            };
+            if (!process.Start()) throw new IOException("PowerShell did not start.");
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            // WaitForExitAsync also waits for redirected output EOF. A long-lived probe child
+            // can inherit those pipe handles, so watch the launcher process itself instead.
+            while (!process.HasExited) await Task.Delay(50);
+            // Drain briefly for final lines, then cancel reads instead of waiting for child EOF.
+            await Task.WhenAny(Task.WhenAll(outputEnded.Task, errorEnded.Task), Task.Delay(250));
+            process.CancelOutputRead();
+            process.CancelErrorRead();
+            string output;
+            string error;
+            lock (outputBuilder) output = outputBuilder.ToString().Trim();
+            lock (errorBuilder) error = errorBuilder.ToString().Trim();
             if (process.ExitCode == 0)
             {
                 RememberGameDirectory(gameDirectory);
@@ -206,14 +234,23 @@ public partial class MainWindow
                 _followNewest = true;
                 ReloadHistory();
             }
-            else SetCaptureError($"Capture could not start: {(string.IsNullOrEmpty(error) ? output : error)}");
+            else if (!CaptureStartCancellationRequested())
+                SetCaptureError($"Capture could not start: {(string.IsNullOrEmpty(error) ? output : error)}");
         }
         catch (Exception exception)
         {
-            SetCaptureError($"Capture could not start: {exception.Message}");
+            if (!CaptureStartCancellationRequested())
+                SetCaptureError($"Capture could not start: {exception.Message}");
         }
         finally
         {
+            if (_captureStartCancelPath is { } cancelPath)
+            {
+                try { File.Delete(cancelPath); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            _captureStartCancelPath = null;
             _captureBusy = false;
             _captureStarting = false;
             RefreshCaptureStatus();
@@ -224,6 +261,13 @@ public partial class MainWindow
                 _ = Dispatcher.BeginInvoke(Close);
             }
         }
+    }
+
+    private bool CaptureStartCancellationRequested()
+    {
+        try { return _captureStartCancelPath is { } path && File.Exists(path); }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     private static int[] GetGamePids()
@@ -386,6 +430,9 @@ public partial class MainWindow
         var hours = Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_HOURS");
         if (int.TryParse(hours, out var captureHours) && captureHours is >= 2 and <= 12)
             arguments.AddRange(["--capture-hours", captureHours.ToString()]);
+        var captureProfile = Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE");
+        if (captureProfile is "Live" or "HealingResearch")
+            arguments.AddRange(["--capture-profile", captureProfile]);
         var gameDirectory = Environment.GetEnvironmentVariable("SORA2_DETAILS_GAME_DIRECTORY");
         if (!string.IsNullOrWhiteSpace(gameDirectory))
             arguments.AddRange(["--game-directory", gameDirectory]);

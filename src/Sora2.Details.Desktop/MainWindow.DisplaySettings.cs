@@ -23,7 +23,7 @@ public partial class MainWindow
         FooterDragArea.Cursor = cursor;
         var dragHint = _displaySettings.LockPosition ? "Position locked" : "Drag to move the meter";
         HeaderDragArea.ToolTip = $"{dragHint} · right-click for display settings";
-        CloseButton.ToolTip = _displaySettings.CloseToTray ? "Hide meter to tray" : "Exit Sora 2 Details";
+        CloseButton.ToolTip = "Choose to hide to the tray or exit";
         EncounterHeader.ToolTip = dragHint;
         FooterDragArea.ToolTip = dragHint;
     }

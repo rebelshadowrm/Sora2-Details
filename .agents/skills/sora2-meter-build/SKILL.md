@@ -9,6 +9,10 @@ The [advanced combat log](../../../docs/COMBAT-LOG-PRIORITY.md) is the primary p
 
 Work in the Sora2-Details repository. Read the relevant parts of [the build plan](../../../BUILD-PLAN.md) and [README](../../../README.md) before changing architecture. Read [the hook research handoff](../../../docs/HOOK-RESEARCH-HANDOFF.md) when the task touches game capture, executable addresses, or skill metadata. Inspect the current code before treating a planned component as already implemented.
 
+For reported defects, follow the [problem-solving protocol](../../../docs/PROBLEM-SOLVING-PROTOCOL.md): compare failing and working paths, trace the actual event and cleanup flow, implement the best supported fix, and verify the failing path before calling it resolved.
+
+For any live effect hook, resource field, source/action attribution, or effect-log mapping, follow [sora2-effect-tracing](../sora2-effect-tracing/SKILL.md) and [sora2-effect-lookup](../sora2-effect-lookup/SKILL.md). The evidence gates in [the effect trace and lookup practice](../../../docs/EFFECT-TRACE-AND-LOOKUP-PRACTICE.md) are required before code assigns a semantic label to a memory value or lookup key.
+
 For the current installed preview, `tools/lifecycle_probe.py` writes bounded raw JSONL under `%LOCALAPPDATA%\Sora2 Details\live`, and `tools/live_capture_bridge.py` writes partial encounter snapshots under `%LOCALAPPDATA%\Sora2 Details\encounters`. Keep raw evidence durable across app updates and distinguish the Python bridge from the fuller `ICombatCaptureSource` design. Use [sora2-meter-publish](../sora2-meter-publish/SKILL.md) when packaging or publishing builds.
 
 ## Product invariants

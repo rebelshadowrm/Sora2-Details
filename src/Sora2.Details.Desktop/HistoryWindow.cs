@@ -9,8 +9,10 @@ namespace Sora2.Details.Desktop;
 public sealed class HistoryWindow : Window
 {
     private sealed record HistoryItem(Encounter Encounter, string Display, BossClassification Classification);
+    private const string PlacementFile = "history-window.json";
     private readonly IReadOnlyList<Encounter> _encounters;
     private readonly EncounterHistorySettings _settings;
+    private readonly Action<Encounter> _quickSelect;
     private readonly ListBox _list;
     private readonly Button _markBoss;
     private readonly Button _markRegular;
@@ -20,16 +22,36 @@ public sealed class HistoryWindow : Window
     public static string Describe(Encounter encounter, BossClassification classification) =>
         EncounterHistoryView.Describe(encounter, classification);
 
-    internal HistoryWindow(IReadOnlyList<Encounter> encounters, EncounterHistorySettings settings)
+    internal HistoryWindow(IReadOnlyList<Encounter> encounters, EncounterHistorySettings settings,
+        Action<Encounter> quickSelect)
     {
         _encounters = encounters;
         _settings = settings;
+        _quickSelect = quickSelect;
         Title = $"{EncounterHistoryView.FilterModeLabel(settings.FilterMode)} history";
         Width = 650;
         Height = 440;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        if (WindowPlacement.Load(PlacementFile) is { } placement)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = placement.Left;
+            Top = placement.Top;
+            Width = placement.Width;
+            Height = placement.Height;
+        }
+        Closing += (_, _) => SavePlacement();
         Background = new SolidColorBrush(Color.FromRgb(27, 30, 35));
         Foreground = Brushes.White;
         var panel = new DockPanel { Margin = new Thickness(14) };
+        var guidance = new TextBlock
+        {
+            Text = "Select a fight to load it in the meter. Confirm or mark it here.",
+            Foreground = new SolidColorBrush(Color.FromRgb(180, 185, 192)),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        DockPanel.SetDock(guidance, Dock.Top);
+        panel.Children.Add(guidance);
         var filter = new ComboBox { Margin = new Thickness(0, 0, 0, 10), MinWidth = 230 };
         foreach (var (mode, tooltip) in new[]
         {
@@ -71,10 +93,6 @@ public sealed class HistoryWindow : Window
             Padding = new Thickness(8), IsEnabled = false };
         _clearMark.Click += (_, _) => MarkSelection(BossClassification.Unclassified);
         actions.Children.Add(_clearMark);
-        var open = new Button { Content = "Open encounter", Margin = new Thickness(10, 0, 0, 0),
-            Padding = new Thickness(8) };
-        open.Click += (_, _) => OpenSelection();
-        actions.Children.Add(open);
         DockPanel.SetDock(actions, Dock.Bottom);
         panel.Children.Add(actions);
         _list = new ListBox
@@ -99,16 +117,26 @@ public sealed class HistoryWindow : Window
         miniStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.LightGoldenrodYellow));
         itemStyle.Triggers.Add(miniStyle);
         _list.ItemContainerStyle = itemStyle;
-        _list.SelectionChanged += (_, _) => RefreshMarkButtons();
+        _list.SelectionChanged += (_, _) =>
+        {
+            RefreshMarkButtons();
+            if (SelectedEncounter is { } encounter) _quickSelect(encounter);
+        };
         RefreshItems();
-        _list.MouseDoubleClick += (_, _) => OpenSelection();
         panel.Children.Add(_list);
         Content = panel;
     }
 
-    private void OpenSelection()
+    private void SavePlacement()
     {
-        if (SelectedEncounter is not null) DialogResult = true;
+        var bounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, ActualWidth, ActualHeight)
+            : RestoreBounds;
+        try { WindowPlacement.Save(PlacementFile, bounds); }
+        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException)
+        {
+            // Window preferences are optional.
+        }
     }
 
     private void SetFilterMode(HistoryFilterMode mode)

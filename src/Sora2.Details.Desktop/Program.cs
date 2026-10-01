@@ -74,6 +74,15 @@ internal static class Program
                     startupArgs["SORA2_DETAILS_CAPTURE_HOURS"] = hours.ToString();
                 continue;
             }
+            if (args[index].Equals("--capture-profile", StringComparison.OrdinalIgnoreCase) &&
+                index + 1 < args.Length)
+            {
+                var value = args[++index];
+                if (value.Equals("Live", StringComparison.OrdinalIgnoreCase) ||
+                    value.Equals("HealingResearch", StringComparison.OrdinalIgnoreCase))
+                    startupArgs["SORA2_DETAILS_CAPTURE_PROFILE"] = value;
+                continue;
+            }
             if (args[index].Equals("--game-directory", StringComparison.OrdinalIgnoreCase) &&
                 index + 1 < args.Length)
             {
@@ -122,6 +131,7 @@ internal static class Program
             var argumentName = name switch
             {
                 "SORA2_DETAILS_CAPTURE_HOURS" => "--capture-hours",
+                "SORA2_DETAILS_CAPTURE_PROFILE" => "--capture-profile",
                 "SORA2_DETAILS_GAME_DIRECTORY" => "--game-directory",
                 "SORA2_DETAILS_PYTHON_PATH" => "--python-path",
                 "SORA2_DETAILS_METER_ONLY" => "--meter-only",

@@ -189,7 +189,25 @@ class LiveBridge:
             return None, "effect-owner-mismatch"
         matched_enemy = self.enemy_names.get(source_ptr)
         if not matched_enemy:
-            status = self.enemy_lookup.get(source_ptr, {}).get("status", "unobserved")
+            lookup = self.enemy_lookup.get(source_ptr, {})
+            status = lookup.get("status", "unobserved")
+            if status == "ambiguous":
+                candidates = lookup.get("candidates", [])
+                candidate_names = [
+                    self.enemy_ai_index.skill_names(candidate["unitId"])
+                    .get(packed_id & 0xFFFF, [])
+                    for candidate in candidates
+                    if candidate.get("unitId")
+                ]
+                if (candidate_names and len(candidate_names) == len(candidates) and
+                        all(len(names) == 1 for names in candidate_names) and
+                        len({names[0] for names in candidate_names}) == 1):
+                    agreed_name = candidate_names[0][0]
+                    if "\u25c6" in agreed_name:
+                        return None, "enemy-ai-skill-name-unlocalized"
+                    return ({"id": raw_effect["id"], "name": f"? {agreed_name}",
+                             "rawParam30": raw_effect["rawParam30"],
+                             "provenance": "live-effect-ID/ambiguous-stat-candidates-agree/exact-English-unit-AI"}, None)
             return None, f"enemy-unit-key-{status}"
         if matched_enemy["numericId"] != source_id:
             return None, "enemy-status-id-mismatch"
@@ -198,9 +216,11 @@ class LiveBridge:
             return None, "enemy-ai-skill-id-absent"
         if len(names) != 1:
             return None, "enemy-ai-skill-id-ambiguous"
+        if "\u25c6" in names[0]:
+            return None, "enemy-ai-skill-name-unlocalized"
         return ({"id": raw_effect["id"], "name": f"? {names[0]}",
                  "rawParam30": raw_effect["rawParam30"],
-                 "provenance": "live-effect-ID/provisional-stat-signature/exact-English-enemy-AI"}, None)
+                 "provenance": "live-effect-ID/provisional-stat-signature/exact-English-unit-AI"}, None)
 
     def lookup_enemy_move(self, attack, raw_effect):
         return self.lookup_enemy_move_with_reason(attack, raw_effect)[0]

@@ -157,6 +157,25 @@ def run_fixed(request, pid, request_id):
                    "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
                    "--seconds", str(seconds), "--max-hits", "3000"]
         timeout = seconds + 30
+    elif action == "healing_capture":
+        seconds = request.get("seconds", 1800)
+        if type(seconds) is not int or not 60 <= seconds <= 3600:
+            raise ValueError("Healing capture seconds must be 60..3600")
+        LIVE_DIR.mkdir(parents=True, exist_ok=True)
+        output = LIVE_DIR / f"probe-session-{request_id}.jsonl"
+        stop_file = LIVE_DIR / f"stop-{request_id}"
+        stop_file.unlink(missing_ok=True)
+        command = [sys.executable, str(ROOT / "tools" / "lifecycle_probe.py"), str(pid),
+                   "--expected-sha256", EXPECTED_SHA256,
+                   "--rva", "BattleInit=0xC2750",
+                   "--rva", "BattleCommandBegin=0x1175B8",
+                   "--inspect-turn-context", "BattleCommandBegin",
+                   "--rva", "HealingEffectHelper=0xE4530",
+                   "--inspect-effect-entry", "HealingEffectHelper",
+                   "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
+                   "--stop-file", str(stop_file),
+                   "--seconds", str(seconds), "--max-hits", "100000"]
+        timeout = seconds + 45
     elif action == "result_class_capture":
         seconds = request.get("seconds", 180)
         if type(seconds) is not int or not 30 <= seconds <= 300:
@@ -276,7 +295,7 @@ def serve(args):
                         "targetPid": args.pid, "expiresAt": expiry.isoformat(),
                         "actions": ["ping", "status_snapshot", "scan_status",
                                     "name_capture", "boundary_capture", "turn_capture",
-                                    "action_id_capture", "result_class_capture", "critical_capture",
+                                    "action_id_capture", "healing_capture", "result_class_capture", "critical_capture",
                                     "critical_long_capture", "critical_popup_capture",
                                     "live_capture", "session_capture", "stop"]})
     try:
@@ -318,13 +337,14 @@ def send(args):
     request_id = uuid.uuid4().hex
     request = {"sessionId": ready["sessionId"], "action": args.action}
     if args.action in ("name_capture", "boundary_capture", "turn_capture",
-                       "action_id_capture", "result_class_capture", "critical_capture",
+                       "action_id_capture", "healing_capture", "result_class_capture", "critical_capture",
                        "critical_long_capture", "critical_popup_capture",
                        "live_capture", "session_capture"):
         request["seconds"] = args.seconds if args.seconds is not None else (
             300 if args.action == "boundary_capture" else
             43200 if args.action == "session_capture" else
             1800 if args.action in ("live_capture", "critical_long_capture") else
+            1800 if args.action == "healing_capture" else
             300 if args.action == "critical_popup_capture" else
             180 if args.action in ("turn_capture", "action_id_capture",
                                    "result_class_capture", "critical_capture") else 120)
@@ -358,7 +378,7 @@ def main():
     client = modes.add_parser("send")
     client.add_argument("action", choices=("ping", "status_snapshot", "scan_status",
                                            "name_capture", "boundary_capture", "turn_capture",
-                                           "action_id_capture", "result_class_capture", "critical_capture",
+                                           "action_id_capture", "healing_capture", "result_class_capture", "critical_capture",
                                            "critical_long_capture", "critical_popup_capture", "live_capture",
                                            "session_capture", "stop"))
     client.add_argument("--seconds", type=int)

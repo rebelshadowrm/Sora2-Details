@@ -11,36 +11,37 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
         _current = current;
-        CloseBehaviorChoice.SelectedIndex = current.CloseToTray ? 0 : 1;
+        CloseChoiceStatus.Text = current.RememberedCloseChoice switch
+        {
+            CloseWindowChoice.HideToTray => "Saved choice: hide to the system tray.",
+            CloseWindowChoice.Exit => "Saved choice: close Sora 2 Details.",
+            _ => "You will be asked each time."
+        };
+        AskAgainChoice.IsEnabled = current.RememberedCloseChoice is not null;
         AlwaysOnTopChoice.IsChecked = current.AlwaysOnTop;
         LockPositionChoice.IsChecked = current.LockPosition;
         ClickThroughChoice.IsEnabled = trayAvailable;
         ClickThroughChoice.IsChecked = trayAvailable && current.ClickThrough;
-        PopulateOpacityChoices(current.Opacity);
+        OpacityChoice.Value = Math.Clamp(current.Opacity,
+            MeterDisplaySettings.MinimumOpacity, MeterDisplaySettings.MaximumOpacity);
+        OpacityValue.Text = $"{OpacityChoice.Value:P0}";
         PopulateFontSizeChoices(current.FontSize);
     }
 
     internal MeterDisplaySettings UpdatedSettings => _current with
     {
-        CloseToTray = CloseBehaviorChoice.SelectedIndex == 0,
+        RememberedCloseChoice = AskAgainChoice.IsChecked == true
+            ? null : _current.RememberedCloseChoice,
         AlwaysOnTop = AlwaysOnTopChoice.IsChecked == true,
         LockPosition = LockPositionChoice.IsChecked == true,
         ClickThrough = ClickThroughChoice.IsChecked == true,
-        Opacity = SelectedDouble(OpacityChoice, _current.Opacity),
+        Opacity = OpacityChoice.Value,
         FontSize = SelectedInt(FontSizeChoice, _current.FontSize)
     };
 
-    private void PopulateOpacityChoices(double current)
+    private void OpacityChoice_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        var choices = new[] { 1d, 0.9d, 0.75d, 0.6d };
-        if (!choices.Any(value => Math.Abs(value - current) < 0.001))
-            choices = choices.Append(current).OrderByDescending(value => value).ToArray();
-        foreach (var value in choices)
-        {
-            var item = new ComboBoxItem { Content = $"{value:P0}", Tag = value };
-            OpacityChoice.Items.Add(item);
-            if (Math.Abs(value - current) < 0.001) OpacityChoice.SelectedItem = item;
-        }
+        OpacityValue.Text = $"{e.NewValue:P0}";
     }
 
     private void PopulateFontSizeChoices(int current)
@@ -55,9 +56,6 @@ public partial class SettingsWindow : Window
             if (value == current) FontSizeChoice.SelectedItem = item;
         }
     }
-
-    private static double SelectedDouble(ComboBox choice, double fallback) =>
-        choice.SelectedItem is ComboBoxItem { Tag: double value } ? value : fallback;
 
     private static int SelectedInt(ComboBox choice, int fallback) =>
         choice.SelectedItem is ComboBoxItem { Tag: int value } ? value : fallback;

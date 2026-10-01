@@ -28,6 +28,7 @@ public partial class MainWindow
     private Forms.ToolStripMenuItem? _trayStartCapture;
     private Forms.ToolStripMenuItem? _trayStopCapture;
     private Forms.ToolStripMenuItem? _trayRestoreInteraction;
+    private bool _exitWhenTrayMenuCloses;
 
     private void InitializeWindowInteraction()
     {
@@ -39,6 +40,7 @@ public partial class MainWindow
         try
         {
             _trayMenu = new Forms.ContextMenuStrip();
+            _trayMenu.Closed += (_, _) => DispatchTrayExitIfPending();
             _trayShowMeter = new Forms.ToolStripMenuItem("Show meter");
             _trayShowMeter.Click += (_, _) => Dispatcher.BeginInvoke(ShowMeterFromTray);
             _trayMenu.Items.Add(_trayShowMeter);
@@ -71,7 +73,12 @@ public partial class MainWindow
             _trayMenu.Items.Add(settings);
             _trayMenu.Items.Add(new Forms.ToolStripSeparator());
             var exit = new Forms.ToolStripMenuItem("Exit Sora 2 Details");
-            exit.Click += (_, _) => Dispatcher.BeginInvoke(RequestFullExit);
+            exit.Click += (_, _) =>
+            {
+                _exitWhenTrayMenuCloses = true;
+                _trayMenu?.Close();
+                DispatchTrayExitIfPending();
+            };
             _trayMenu.Items.Add(exit);
             _trayIconImage = LoadApplicationIcon();
             _trayIcon = new Forms.NotifyIcon
@@ -97,6 +104,15 @@ public partial class MainWindow
             MessageBox.Show(this, $"Window interaction could not be configured: {exception.Message}",
                 "Display settings", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private void DispatchTrayExitIfPending()
+    {
+        if (!_exitWhenTrayMenuCloses) return;
+        _exitWhenTrayMenuCloses = false;
+        // Close the WinForms popup before WPF closes the window and disposes the tray objects.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Normal,
+            new Action(RequestFullExit));
     }
 
     private static System.Drawing.Icon LoadApplicationIcon()
@@ -195,12 +211,9 @@ public partial class MainWindow
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var history = new HistoryWindow(_encounters, _historySettings) { Owner = this };
-        if (history.ShowDialog() == true)
-        {
-            _followNewest = false;
-            SelectEncounter(history.SelectedEncounter);
-        }
+        var history = new HistoryWindow(_encounters, _historySettings,
+            QuickSelectHistoryEncounter) { Owner = this };
+        history.ShowDialog();
     }
 
     private void OpenSettingsFromTray()
@@ -230,6 +243,7 @@ public partial class MainWindow
         if (_trayIcon is not null)
             _trayIcon.Text = _displaySettings.ClickThrough
                 ? "Sora 2 Details - click-through; tray restores interaction"
+                : _captureStopping ? "Sora 2 Details - stopping capture"
                 : CaptureMayBeActive() ? "Sora 2 Details - capturing" : "Sora 2 Details - waiting in tray";
     }
 

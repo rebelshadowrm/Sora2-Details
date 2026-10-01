@@ -1,8 +1,8 @@
-"""Research lookup for enemy skill names in this exact English script archive.
+"""Research lookup for unit skill names in this exact English script archive.
 
 The script's SkillTable bytecode has a tagged skill ID followed by tagged
 string offsets. A live enemy effect's low 16-bit ID is useful only after a
-separate, unique unit-key match selects the correct per-monster AI script.
+separate, unique unit-key match selects the correct per-unit AI script.
 """
 
 import argparse
@@ -15,7 +15,7 @@ import sys
 
 ARCHIVE_SHA256 = "6ee144495df231a17803b8e61fb68060f53924ca9c33b463280f49873682b286"
 ARCHIVE_ENTRY_COUNT = 1082
-UNIT_KEY = re.compile(r"mon[a-zA-Z0-9_]+\Z")
+UNIT_KEY = re.compile(r"[a-zA-Z0-9_]+\Z")
 
 
 class EnemyAiSkillIndex:

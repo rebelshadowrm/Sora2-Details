@@ -1,4 +1,4 @@
-"""Offline exact-archive checks for the per-monster AI skill lookup."""
+"""Offline exact-archive checks for the per-unit AI skill lookup."""
 
 import argparse
 from pathlib import Path

@@ -9,6 +9,8 @@ The [combat log](../../../docs/COMBAT-LOG-PRIORITY.md) is the primary artifact; 
 
 Read [the build plan's validation matrix](../../../BUILD-PLAN.md) and the current tests in `tests/Sora2.Details.Checks`. For capture tests, read [the hook research handoff](../../../docs/HOOK-RESEARCH-HANDOFF.md). Separate fixture evidence from live-game evidence in the result; the current sample JSON is invented data.
 
+For a reported failure, follow the [problem-solving protocol](../../../docs/PROBLEM-SOLVING-PROTOCOL.md). Investigate existing evidence and compare the failing mode with any passing mode before requesting reproduction; report exactly which path was and was not verified.
+
 ## Replay and application checks
 
 Build and run the existing checks:
