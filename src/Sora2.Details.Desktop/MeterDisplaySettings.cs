@@ -10,6 +10,7 @@ internal sealed record MeterDisplaySettings(
     int FontSize = 12)
 {
     public bool ClickThrough { get; init; }
+    public bool CloseToTray { get; init; } = true;
 
     private static string PathName => Path.Combine(MeterDataDirectory.PathName, "meter-display.json");
 

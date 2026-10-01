@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -18,6 +20,7 @@ public partial class MainWindow
     private const uint SwpFrameChanged = 0x0020;
 
     private Forms.NotifyIcon? _trayIcon;
+    private System.Drawing.Icon? _trayIconImage;
     private Forms.ContextMenuStrip? _trayMenu;
     private Forms.ToolStripMenuItem? _trayClickThrough;
     private Forms.ToolStripMenuItem? _trayShowMeter;
@@ -28,6 +31,11 @@ public partial class MainWindow
 
     private void InitializeWindowInteraction()
     {
+        var windowHandle = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(windowHandle)?.AddHook(MainWindowWindowProc);
+        if (!AppActivation.AllowActivationMessage(windowHandle))
+            Trace.TraceWarning($"Could not enable second-launch activation message (Win32 error {Marshal.GetLastPInvokeError()}).");
+
         try
         {
             _trayMenu = new Forms.ContextMenuStrip();
@@ -65,9 +73,10 @@ public partial class MainWindow
             var exit = new Forms.ToolStripMenuItem("Exit Sora 2 Details");
             exit.Click += (_, _) => Dispatcher.BeginInvoke(RequestFullExit);
             _trayMenu.Items.Add(exit);
+            _trayIconImage = LoadApplicationIcon();
             _trayIcon = new Forms.NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
+                Icon = _trayIconImage,
                 Text = "Sora 2 Details",
                 ContextMenuStrip = _trayMenu,
                 Visible = true
@@ -90,6 +99,52 @@ public partial class MainWindow
         }
     }
 
+    private static System.Drawing.Icon LoadApplicationIcon()
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "assets", "sora2-details.ico");
+        if (File.Exists(iconPath))
+        {
+            try { return new System.Drawing.Icon(iconPath); }
+            catch (Exception exception) when (exception is ArgumentException or ExternalException or IOException)
+            {
+                Trace.TraceWarning($"Could not load the packaged application icon: {exception.Message}");
+            }
+        }
+
+        var executable = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(executable))
+        {
+            try
+            {
+                if (System.Drawing.Icon.ExtractAssociatedIcon(executable) is { } applicationIcon)
+                    return applicationIcon;
+            }
+            catch (Exception exception) when (exception is ArgumentException or ExternalException or IOException)
+            {
+                Trace.TraceWarning($"Could not load the embedded application icon: {exception.Message}");
+            }
+        }
+        return (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
+    }
+
+    private IntPtr MainWindowWindowProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam,
+        ref bool handled)
+    {
+        if (message == AppActivation.ActivationMessage)
+        {
+            ActivateFromAnotherLaunch();
+            handled = true;
+        }
+        return IntPtr.Zero;
+    }
+
+    private void ActivateFromAnotherLaunch()
+    {
+        if (_displaySettings.ClickThrough)
+            SetDisplaySettings(_displaySettings with { ClickThrough = false });
+        ShowMeterFromTray();
+    }
+
     private void RestoreInteractionFromTray()
     {
         if (_displaySettings.ClickThrough)
@@ -102,6 +157,7 @@ public partial class MainWindow
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Show();
         Activate();
+        RefreshTrayCommands();
     }
 
     private void HideMeterToTray()
@@ -109,9 +165,11 @@ public partial class MainWindow
         if (_trayIcon?.Visible == true)
         {
             Hide();
+            RefreshTrayCommands();
             return;
         }
         if (WindowState != WindowState.Minimized) WindowState = WindowState.Minimized;
+        RefreshTrayCommands();
     }
 
     private void ShowGameDetectedNotification()
@@ -148,11 +206,7 @@ public partial class MainWindow
     private void OpenSettingsFromTray()
     {
         ShowMeterFromTray();
-        var menu = new System.Windows.Controls.ContextMenu();
-        menu.Items.Add(BuildDisplaySettingsMenu());
-        menu.PlacementTarget = HeaderDragArea;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
-        menu.IsOpen = true;
+        OpenSettingsWindow();
     }
 
     private void RefreshTrayCommands()
@@ -189,6 +243,8 @@ public partial class MainWindow
         }
         _trayMenu?.Dispose();
         _trayMenu = null;
+        _trayIconImage?.Dispose();
+        _trayIconImage = null;
         _trayClickThrough = null;
         _trayShowMeter = null;
         _trayHideMeter = null;

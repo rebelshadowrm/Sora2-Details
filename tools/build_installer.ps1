@@ -73,7 +73,10 @@ try {
 
     $tools = Join-Path $stage 'tools'
     $python = Join-Path $stage 'python'
-    New-Item -ItemType Directory -Path $tools, $python -Force | Out-Null
+    $assets = Join-Path $stage 'assets'
+    New-Item -ItemType Directory -Path $tools, $python, $assets -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'src\Sora2.Details.Desktop\assets\sora2-details.ico') `
+        -Destination $assets
     # Only the session launcher and its direct Python dependencies belong in an installed build.
     # The source checkout and the legacy ZIP builder retain the research tools.
     $runtimeTools = @(

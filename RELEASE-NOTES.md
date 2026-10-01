@@ -1,10 +1,13 @@
-# Sora 2 Details 0.2.0 preview 16
+# Sora 2 Details 0.2.0 preview 17
 
-## Capture controls and startup
+## Launch, settings, and capture
 
 - The meter now shows capture state without a separate capture button. Start and stop capture from the tray menu.
 - The status reads **Starting capture** while connecting and **Capturing** once the session is active.
-- The startup note about battle-data permission is shorter and uses less technical language.
+- Launching the EXE while Sora 2 Details is already running restores the existing meter from the tray.
+- Settings opens in a window and lets you choose whether X hides to the tray or closes the app.
+- The system tray icon now uses the app icon.
+- Startup no longer shows a separate information dialog before Windows asks for approval.
 - Live command-battle capture remains partial; support actions, misses, some move names, and critical status are not fully captured.
 
 ## Preview 15

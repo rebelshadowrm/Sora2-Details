@@ -23,18 +23,19 @@ internal static class Program
 
         if (!IsAdministrator())
         {
+            if (AppActivation.TryActivateExisting()) return;
             if (AnotherApplicationInstanceIsRunning()) return;
-            MessageBox.Show(
-                "Sora 2 Details needs permission to read battle data. " +
-                "Windows will ask for approval before the app opens.",
-                "Sora 2 Details", MessageBoxButton.OK, MessageBoxImage.Information);
             if (StartElevated(dataDirectory, applicationArgs, startupArgs)) return;
             return;
         }
 
         var userSid = WindowsIdentity.GetCurrent().User?.Value ?? "current-user";
         using var instanceMutex = new Mutex(true, $"Local\\Sora2Details.Desktop.{userSid}", out var createdNew);
-        if (!createdNew) return;
+        if (!createdNew)
+        {
+            AppActivation.TryActivateExisting();
+            return;
+        }
         var app = new App();
         app.Run();
     }
@@ -148,8 +149,6 @@ internal static class Program
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
         {
-            MessageBox.Show("Sora 2 Details closed because approval was canceled.",
-                "Sora 2 Details", MessageBoxButton.OK, MessageBoxImage.Information);
             return false;
         }
         catch (Win32Exception exception)

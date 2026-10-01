@@ -125,9 +125,13 @@ public partial class MainWindow : Window
     {
         if (!_exitRequested)
         {
-            e.Cancel = true;
-            HideMeterToTray();
-            return;
+            if (_displaySettings.CloseToTray)
+            {
+                e.Cancel = true;
+                HideMeterToTray();
+                return;
+            }
+            _exitRequested = true;
         }
         if (_exitAfterDetach || !File.Exists(CurrentCapturePath()) && !_captureBusy) return;
         e.Cancel = true;
@@ -461,7 +465,9 @@ public partial class MainWindow : Window
             menu.Items.Add(choice);
         }
         menu.Items.Add(new Separator());
-        menu.Items.Add(BuildDisplaySettingsMenu());
+        var settings = new MenuItem { Header = "Settings…" };
+        settings.Click += (_, _) => OpenSettingsWindow();
+        menu.Items.Add(settings);
         OpenMenu(menu, (Button)sender);
     }
 
@@ -723,5 +729,9 @@ public partial class MainWindow : Window
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) => HideMeterToTray();
-    private void CloseButton_Click(object sender, RoutedEventArgs e) => HideMeterToTray();
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_displaySettings.CloseToTray) HideMeterToTray();
+        else RequestFullExit();
+    }
 }
