@@ -5,7 +5,6 @@
     <Content Include="..\..\samples\command-battles.json" Link="samples\command-battles.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="assets\skill-icon-map.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="assets\sora2-details.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Resource Include="assets\sora2-details.ico" />
   </ItemGroup>
 
   <ItemGroup>

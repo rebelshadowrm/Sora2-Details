@@ -1,7 +1,8 @@
-# Sora 2 Details 0.2.0 preview 17
+# Sora 2 Details 0.2.0 preview 18
 
 ## Launch, settings, and capture
 
+- Fixed a startup issue that could keep the app from opening after Windows approval. If preview 17 will not launch, install preview 18 with the Setup executable from this release.
 - The meter now shows capture state without a separate capture button. Start and stop capture from the tray menu.
 - The status reads **Starting capture** while connecting and **Capturing** once the session is active.
 - Launching the EXE while Sora 2 Details is already running restores the existing meter from the tray.

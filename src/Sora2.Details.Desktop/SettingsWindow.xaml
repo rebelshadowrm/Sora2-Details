@@ -1,7 +1,7 @@
 <Window x:Class="Sora2.Details.Desktop.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Sora 2 Details Settings" Icon="pack://application:,,,/assets/sora2-details.ico"
+        Title="Sora 2 Details Settings"
         Width="390" Height="480" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
         Background="#17191D" Foreground="#F7F7F7" FontFamily="Segoe UI">
     <Grid Margin="18">

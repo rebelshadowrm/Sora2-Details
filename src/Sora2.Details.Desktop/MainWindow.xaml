@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Sora2.Details.Desktop"
-        Title="Sora 2 Details" Icon="pack://application:,,,/assets/sora2-details.ico"
+        Title="Sora 2 Details"
         Width="340" Height="205" MinWidth="300" MinHeight="170"
         WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResizeWithGrip"
         Topmost="True" ShowActivated="False"
