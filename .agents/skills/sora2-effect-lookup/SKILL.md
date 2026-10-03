@@ -3,12 +3,16 @@ name: sora2-effect-lookup
 description: Confirm game memory identities and map observed actor, action, item, skill, and resource keys to exact Sora 2 tables. Use before implementing or reviewing an effect lookup; use sora2-meter-test for validation-only meter work.
 ---
 
-# Confirm memory identity before lookup
+# Confirm runtime identity before enrichment
 
-Follow the required [effect tracing and lookup evidence practice](../../../docs/EFFECT-TRACE-AND-LOOKUP-PRACTICE.md). Read the [table linkage audit](../../../docs/TABLE-LINKAGE-AUDIT.md), plus [source-name research](../../../docs/SOURCE-NAMES-AND-CRITS.md) when actor identity is involved. Use [sora2-meter-lookup](../sora2-meter-lookup/SKILL.md) for existing table parser conventions and the [hook research handoff](../../../docs/HOOK-RESEARCH-HANDOFF.md) for executable-specific locations.
+Read [evidence practice](../../../docs/EFFECT-TRACE-AND-LOOKUP-PRACTICE.md), [the research workflow](../../../docs/RESEARCH-WORKFLOW.md), and [table linkage](../../../docs/TABLE-LINKAGE-AUDIT.md). Use meter-lookup for parser/integration work and effect-tracing when new live evidence is necessary.
 
-Establish the evidence chain in order: exact executable hash and module-relative code location → raw pointer/field and its runtime role → stable observed actor/action/resource key → exact locale/build table row → serialized provenance and user-visible label. Keep memory addresses, runtime instance IDs, template/unit keys, packed action IDs, item IDs, and table row IDs as separate fields unless a verified join proves their relationship.
+Prove the chain: executable/table fingerprint, verified callback and field role, inline observed key/bytes, exact unique table row, persisted provenance, displayed label. Keep actor instances, status IDs, unit keys, packed skill IDs, item IDs and condition keys distinct. Pointer equality across captures, timing, amount patterns and player names do not establish a join.
 
-Before adding a semantic mapping, verify the field meaning and calling convention, capture a controlled live value change, distinguish source from target and current action from nearby commands, and prove the static join is exact and unique. Use a positive example and a relevant negative/contrast example. Amounts, names, pointer proximity, and timing alone are not confirmation. Preserve the raw values and lookup candidates when evidence is incomplete; return explicit `unknown` or `ambiguous` rather than a guessed label.
+Require relevant positive and negative controls. Scope a mapping to its verified callers and descriptor layout. Full SkillParam matching, generated item matching, condition-table lookup and animation-string candidates are different evidence classes; do not promote one into another. Preserve ambiguous rows, raw pointers, bytes and failed lookups.
 
-Review the code path that records the raw key, performs the table join, serializes provenance, and presents the label. Confirm that unknowns remain representable and that a mapping change does not rewrite the raw event. Record the capture path and evidence note in the code review or research document. Use [sora2-effect-tracing](../sora2-effect-tracing/SKILL.md) when the missing evidence requires another live capture.
+Enemy runtime IDs are not template keys. Unique stat signatures remain provisional. Do not invent a global low-ID offset when a named craft's effect ID differs from its AI entry. Accepted animation matches can supply a visibly marked name candidate while the original native ID remains unresolved.
+
+Direct numeric healing pairing requires the verified same-thread/target path, setter caller `+0xE4DB1` and matching requested delta. Inline R14 lookup is limited to verified callers; generic owner 65535 does not identify a support owner. Calculated after-values are not post-write reads.
+
+Validate the complete recording-to-display path and negative/duplicate cases. Re-enrichment must preserve every raw observation and order. Keep production totals independent of research candidates. Record evidence and limits in a result document; never silently rewrite historical raw data.

@@ -41,7 +41,7 @@ public partial class SettingsWindow : Window
 
     private void OpacityChoice_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        OpacityValue.Text = $"{e.NewValue:P0}";
+        if (OpacityValue is not null) OpacityValue.Text = $"{e.NewValue:P0}";
     }
 
     private void PopulateFontSizeChoices(int current)

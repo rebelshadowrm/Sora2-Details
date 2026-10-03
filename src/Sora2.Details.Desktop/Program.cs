@@ -16,6 +16,22 @@ internal static class Program
         // Velopack install/update/uninstall hooks must run at the original
         // integrity level and must never trigger an app-startup elevation prompt.
         VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+        if (args.Length == 2 && args[0] == "--recorded-stream")
+        {
+            try
+            {
+                var transcript = Sora2.Details.Core.ResearchTranscript.Load(args[1]);
+                var viewer = new ResearchTranscriptWindow(transcript, Path.GetFullPath(args[1]));
+                new Application { ShutdownMode = ShutdownMode.OnMainWindowClose }.Run(viewer);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+            {
+                MessageBox.Show($"Could not open recorded stream: {error.Message}", "Recorded action stream",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            return;
+        }
         var (dataDirectory, applicationArgs, startupArgs) = ParseArguments(args);
         Environment.SetEnvironmentVariable("SORA2_DETAILS_DATA_DIR", dataDirectory);
         foreach (var (name, value) in startupArgs)
@@ -79,8 +95,10 @@ internal static class Program
             {
                 var value = args[++index];
                 if (value.Equals("Live", StringComparison.OrdinalIgnoreCase) ||
-                    value.Equals("HealingResearch", StringComparison.OrdinalIgnoreCase))
-                    startupArgs["SORA2_DETAILS_CAPTURE_PROFILE"] = value;
+                    value.Equals("HealingResearch", StringComparison.OrdinalIgnoreCase) ||
+                    value.Equals("Transcript", StringComparison.OrdinalIgnoreCase))
+                    startupArgs["SORA2_DETAILS_CAPTURE_PROFILE"] = value.Equals("Live", StringComparison.OrdinalIgnoreCase)
+                        ? "Live" : value.Equals("Transcript", StringComparison.OrdinalIgnoreCase) ? "Transcript" : "HealingResearch";
                 continue;
             }
             if (args[index].Equals("--game-directory", StringComparison.OrdinalIgnoreCase) &&
@@ -140,7 +158,7 @@ internal static class Program
             if (argumentName is not null)
             {
                 forwardedArgs.Add(argumentName);
-                if (value is not null) forwardedArgs.Add(value);
+                if (value is not null && argumentName != "--meter-only") forwardedArgs.Add(value);
             }
         }
         forwardedArgs.Add("--data-dir");

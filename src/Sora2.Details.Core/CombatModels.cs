@@ -1,16 +1,28 @@
 namespace Sora2.Details.Core;
 
 public enum CombatTeam { Party, Enemy, Other }
-public enum CombatEventKind { Damage, Healing, Knockout, Revival, Status, Unknown, HpLoss }
+public enum CombatEventKind
+{
+    Damage, Healing, Knockout, Revival, Status, Unknown, HpLoss,
+    ActionObserved, ResourceChange, StateWriteObserved
+}
 public enum DamageClass { Unknown, Physical, Arts, Other }
 public enum MeterMode { PlayerDamage, EnemyDamage, PlayerTaken, EnemyTaken, Healing, Deaths }
 public enum EncounterOutcome { InProgress, Victory, Escape, Defeat, Interrupted, Unknown }
 
 public sealed record Actor(string Id, string Name, CombatTeam Team,
-    string? NameProvenance = null, int? RuntimeStatusId = null, string? LookupUnitId = null);
+    string? NameProvenance = null, int? RuntimeStatusId = null, string? LookupUnitId = null,
+    string? NameLookupStatus = null, int? NameLookupCandidateCount = null,
+    EnemyStatusSignature? NameLookupSignature = null,
+    IReadOnlyList<EnemyLookupCandidate>? NameLookupCandidates = null);
 
-// A result is one resolved effect on one target, not one animation frame.
-// A nullable amount or HP value means that the capture source did not observe it.
+public sealed record EnemyStatusSignature(int? Level, int? Exp, int? Ep,
+    int? Def, int? Adf, int? Mov);
+public sealed record EnemyLookupCandidate(string UnitId, string Name);
+
+// One ledger row is one observed action/effect call, resource write, or outcome.
+// Nullable values mean that the capture source did not observe them; candidate
+// resource results remain separate from independently observed post-write values.
 public sealed record CombatEvent(
     long Sequence,
     DateTimeOffset ObservedAt,
@@ -32,7 +44,22 @@ public sealed record CombatEvent(
     int? RawEffectCode = null,
     int? RawSourceContextFlags = null,
     int? RawTargetStatus7C = null,
-    string? MoveLookupReason = null);
+    string? MoveLookupReason = null,
+    string? MoveNameProvenance = null,
+    int? MoveRawParam30 = null,
+    string? EventStage = null,
+    string? Resource = null,
+    string? ResourceOperation = null,
+    int? ResourceBefore = null,
+    int? ResourceCandidateAfter = null,
+    int? ResourceMaximum = null,
+    int? RequestedResourceValue = null,
+    int? ResourceCandidateDelta = null,
+    string? ResourceCandidateProvenance = null,
+    string? ResourceSetterCallerRva = null,
+    int? RawPropertyCode = null,
+    int? RawPropertyRequestedValue = null,
+    int? CandidateAmount = null);
 
 public sealed record DamageAmounts(int? Total, int? Effective, int? Overkill)
 {
@@ -54,7 +81,8 @@ public sealed record Encounter(
     bool IsComplete,
     IReadOnlyList<Actor> Actors,
     IReadOnlyList<CombatEvent> Events,
-    IReadOnlyList<string>? Issues = null);
+    IReadOnlyList<string>? Issues = null,
+    int SchemaVersion = 1);
 
 public sealed record MeterRow(string Key, string Name, int Value, double Share);
 

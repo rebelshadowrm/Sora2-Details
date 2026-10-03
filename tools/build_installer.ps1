@@ -27,6 +27,7 @@ $releaseRoot = Join-Path $root 'releases'
 $output = if ($OutputDir) { [IO.Path]::GetFullPath($OutputDir) }
     else { Join-Path $releaseRoot 'velopack-preview' }
 $downloadDir = Join-Path $root '.research-deps\downloads'
+$buildArtifacts = Join-Path $root ('.build\installer-' + $Version)
 $pythonZip = Join-Path $downloadDir 'python-3.13.15-embed-amd64.zip'
 $pythonHash = 'D1F04D990AEE1253D8569E8E5104E30FA9F5FA830899F14843448872D936A2CF'
 $stage = Join-Path $releaseRoot ('.installer-stage-' + [Guid]::NewGuid().ToString('N'))
@@ -45,16 +46,18 @@ try {
         throw 'Bundled Python download failed its pinned SHA-256 check.'
     }
 
-    & dotnet build (Join-Path $root 'Sora2.Details.sln') -c Release @versionMetadata
+    # A source-launched desktop may still hold its usual bin files open.
+    # Packaging uses isolated build outputs and never overwrites that running app.
+    & dotnet build (Join-Path $root 'Sora2.Details.sln') -c Release --artifacts-path $buildArtifacts @versionMetadata
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-    & dotnet run --project (Join-Path $root 'tests\Sora2.Details.Checks') -c Release --no-build
+    & dotnet (Join-Path $buildArtifacts 'bin\Sora2.Details.Checks\release\Sora2.Details.Checks.dll')
     if ($LASTEXITCODE -ne 0) { throw 'Replay and projection checks failed.' }
     & dotnet publish (Join-Path $root 'src\Sora2.Details.Desktop\Sora2.Details.Desktop.csproj') `
-        -c Release -r win-x64 --self-contained true `
+        -c Release -r win-x64 --self-contained true --artifacts-path $buildArtifacts `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true @versionMetadata -o $stage
     if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
     & dotnet publish (Join-Path $root 'src\Sora2.Details.CaptureHost\Sora2.Details.CaptureHost.csproj') `
-        -c Release -r win-x64 --self-contained true -p:PublishTrimmed=true `
+        -c Release -r win-x64 --self-contained true --artifacts-path $buildArtifacts -p:PublishTrimmed=true `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true @versionMetadata -o $stage
     if ($LASTEXITCODE -ne 0) { throw 'Capture host publish failed.' }
 
@@ -77,11 +80,15 @@ try {
     New-Item -ItemType Directory -Path $tools, $python, $assets -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $root 'src\Sora2.Details.Desktop\assets\sora2-details.ico') `
         -Destination $assets
-    # Only the session launcher and its direct Python dependencies belong in an installed build.
+    # Capture launchers and their direct Python dependencies belong in an installed build.
     # The source checkout and the legacy ZIP builder retain the research tools.
     $runtimeTools = @(
         'start_session_logger.ps1', 'start_live_meter.ps1', 'start_probe_session.ps1',
         'stop_live_meter.ps1', 'elevated_probe_session.py', 'lifecycle_probe.py',
+        'action_stream_snapshots.py',
+        'start_action_stream.ps1', 'run_action_stream_probe.ps1', 'action_transcript_bridge.py',
+        'reconcile_action_stream.py', 'action_stream_timeline.py',
+        'item_action_lookup.py', 'item_table_index.py', 'condition_table_index.py',
         'live_capture_bridge.py', 'status_name_index.py', 'name_table_index.py',
         'enemy_ai_skill_index.py', 'skill_table_index.py', 'match_enemy_status.py'
     )
@@ -97,12 +104,14 @@ try {
     $pth = Join-Path $python 'python313._pth'
     if (-not (Test-Path -LiteralPath $pth)) { throw 'Embedded Python path file was not found.' }
     Add-Content -LiteralPath $pth -Value '..\tools' -Encoding ASCII
-    foreach ($script in @('elevated_probe_session.py', 'live_capture_bridge.py')) {
+    foreach ($script in @('elevated_probe_session.py', 'live_capture_bridge.py', 'action_transcript_bridge.py')) {
         & (Join-Path $python 'python.exe') -B (Join-Path $tools $script) --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Embedded Python could not run $script." }
     }
-    & (Join-Path $python 'python.exe') -B (Join-Path $root 'tools\test_elevated_probe_session.py')
-    if ($LASTEXITCODE -ne 0) { throw 'Packaged probe readiness checks failed.' }
+    foreach ($checkScript in @('test_elevated_probe_session.py', 'test_lifecycle_probe.py', 'test_live_capture_bridge.py', 'test_action_stream_snapshots.py', 'test_reconcile_action_stream.py', 'test_action_stream_timeline.py', 'test_action_transcript_bridge.py', 'test_item_action_lookup.py')) {
+        & (Join-Path $python 'python.exe') -B (Join-Path $root "tools\$checkScript")
+        if ($LASTEXITCODE -ne 0) { throw "Packaged capture checks failed: $checkScript" }
+    }
     foreach ($check in @(
         @{ Arguments = '--check-package'; ExitCode = 0 },
         @{ Arguments = '0 30 C:\Data'; ExitCode = 3 },

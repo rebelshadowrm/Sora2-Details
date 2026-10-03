@@ -20,6 +20,11 @@ import time
 
 from match_enemy_status import status_signature, table_signature
 from status_name_index import read_rows as read_enemy_rows
+from action_stream_snapshots import (action_state_snapshot, effect_dispatch_snapshot,
+                                     condition_request_snapshot, condition_return_snapshot,
+                                     queue_transition_snapshot, action_setup_snapshot,
+                                     animation_launch_snapshot, actor_state_dispatch_snapshot,
+                                     first_actor_state_update, battle_mode_write_snapshot)
 
 
 if sys.platform != "win32" or ct.sizeof(ct.c_void_p) != 8:
@@ -162,6 +167,20 @@ def parse_named_address(value):
     return name, address
 
 
+def parse_pointer_write(value):
+    name, separator, tail = value.partition('=')
+    parts = tail.split(',')
+    if not separator or not name or len(parts) != 2:
+        raise argparse.ArgumentTypeError('use NAME=0xROOT,0xOFFSET')
+    try:
+        root, offset = (int(part, 0) for part in parts)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+    if root < 0 or offset < 0:
+        raise argparse.ArgumentTypeError('root and offset must be nonnegative')
+    return name, root, offset
+
+
 def enemy_signature_index(rows):
     index = {}
     for row in rows:
@@ -183,17 +202,25 @@ def enemy_lookup_gap(status_bytes, signatures):
 
 
 def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
-          hp_set_names=(), effect_entry_names=(), attack_call_names=(),
+          hp_set_names=(), effect_entry_names=(), effect_application_names=(),
+          effect_row_call_names=(), resource_set_names=(), attack_call_names=(),
           actor_bytes_names=(), actor_identity_names=(),
           result_frame_names=(), effect_descriptor_names=(), turn_context_names=(),
-          result_entry_names=(), critical_popup_names=(),
-          stop_file=None, enemy_signatures=None):
+          result_entry_names=(), critical_popup_names=(), script_dispatch_names=(),
+          script_name_contains=(), action_state_names=(), effect_dispatch_names=(),
+          condition_request_names=(), condition_return_names=(),
+          queue_store_names=(), queue_resume_names=(), action_setup_names=(),
+          animation_request_names=(), animation_accepted_names=(),
+          actor_state_dispatch_names=(), first_state_update_names=(),
+          stop_file=None, enemy_signatures=None, until_stop_file=False,
+          pointer_write_specs=()):
     threads = {}
     originals = {}
     module_base = None
     debug_process_handle = None
     read_process_handle = None
     addresses = None
+    pointer_writes = {}
     attached = False
     installed = False
     initial_break_seen = False
@@ -226,9 +253,41 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
         data = read_bytes(address, 4)
         return struct.unpack("<i", data)[0] if data is not None else None
 
+    def read_u32(address):
+        data = read_bytes(address, 4)
+        return struct.unpack("<I", data)[0] if data is not None else None
+
     def read_u64(address):
         data = read_bytes(address, 8)
         return struct.unpack("<Q", data)[0] if data is not None else None
+
+    def skill_row_candidate(pointer):
+        plausible = pointer is not None and 0x10000 <= pointer <= 0x7FFFFFFFFFFF
+        row = read_bytes(pointer, 0xB0) if plausible else None
+        return {
+            "skill_row_pointer_candidate": hex(pointer) if pointer else None,
+            "skill_row_packed_id_candidate": read_u32(pointer) if row is not None else None,
+            "skill_row_0xb0_candidate": row.hex() if row is not None else None,
+        }
+
+    def bounded_context_list(context_ptr, pointer_offset, count_offset, item_size,
+                             maximum_items):
+        if not context_ptr:
+            return {"ptr": None, "count": None, "entries": None}
+        list_ptr = read_u64(context_ptr + pointer_offset)
+        count = read_u32(context_ptr + count_offset)
+        bounded_count = min(count, maximum_items) if count is not None else 0
+        data = (read_bytes(list_ptr, bounded_count * item_size)
+                if list_ptr and bounded_count else None)
+        return {"ptr": hex(list_ptr) if list_ptr else None,
+                "count": count,
+                "entries": data.hex() if data is not None else None}
+
+    def read_c_string(address, maximum=128):
+        data = read_bytes(address, maximum) if address else None
+        if data is None:
+            return None
+        return data.split(b"\0", 1)[0].decode("utf-8", errors="replace")
 
     def install(tid, handle):
         nonlocal installed
@@ -286,7 +345,11 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
         read_process_handle = None
         raise
     emit("attached", pid=pid)
-    deadline = time.monotonic() + seconds
+    emit("capture_policy", stop_mode="sentinel" if until_stop_file else "bounded",
+         seconds=None if until_stop_file else seconds,
+         max_hits=None if until_stop_file else max_hits,
+         first_state_update_only=sorted(first_state_update_names))
+    deadline = float("inf") if until_stop_file else time.monotonic() + seconds
     try:
         while not exited:
             if drain_until is not None and time.monotonic() >= drain_until:
@@ -313,6 +376,15 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                 debug_process_handle = event_pointer(event, 8)
                 threads[event.tid] = event_pointer(event, 16)
                 module_base = event_pointer(event, 24)
+                write_specs = list(write_specs)
+                for name, root, offset, relative in pointer_write_specs:
+                    root_slot = module_base + root if relative else root
+                    owner = read_u64(root_slot)
+                    if not owner:
+                        raise ValueError(f'Pointer write root unreadable: {name}')
+                    watched = owner + offset
+                    write_specs.append((name, watched))
+                    pointer_writes[name] = (root_slot, owner, offset)
                 addresses = ([(name, module_base + value if use_rvas else value)
                               for name, value in specs] + list(write_specs))
                 if any(address == 0 for _, address in addresses):
@@ -322,7 +394,12 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                 prior_values = {name: read_i32(address) for name, address in write_specs}
                 emit("module", base=hex(module_base), breakpoints={name: hex(value) for name, value in addresses})
                 if write_specs:
-                    emit("write_baseline", values=prior_values)
+                    emit("write_baseline", values=prior_values,
+                         mode_snapshots={name: battle_mode_write_snapshot(owner, read_bytes, read_u64)
+                                         for name, (root, owner, offset) in pointer_writes.items()
+                                         if name == 'BattleModeWrite' and offset == 0x2D30},
+                         pointer_roots={name: {'slot': hex(root), 'owner': hex(owner), 'offset': hex(offset)}
+                                        for name, (root, owner, offset) in pointer_writes.items()})
                 image_file = event_pointer(event, 0)
                 if image_file:
                     kernel32.CloseHandle(image_file)
@@ -370,14 +447,62 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                     else:
                         if drain_until is None:
                             for slot in slots:
-                                hit_count += 1
                                 name, watched = addresses[slot]
+                                if (name in first_state_update_names
+                                        and first_actor_state_update(ctx, read_bytes, read_u64) is False):
+                                    continue  # Declared scope excludes known later frame updates.
+                                hit_count += 1
                                 fields = dict(name=name, tid=event.tid, rip=hex(ctx.rip),
+                                              observation_sequence=hit_count,
+                                              monotonic_ns=time.monotonic_ns(),
                                               rva=hex(ctx.rip - module_base),
                                               rcx=hex(ctx.rcx), rdx=hex(ctx.rdx),
                                               r8=hex(ctx.r8), r9=hex(ctx.r9),
-                                              rsi=hex(ctx.rsi), r12=hex(ctx.r12),
-                                              r14=hex(ctx.r14), rdi=hex(ctx.rdi))
+                                              rbx=hex(ctx.rbx), rsi=hex(ctx.rsi),
+                                              r12=hex(ctx.r12), r14=hex(ctx.r14),
+                                              rdi=hex(ctx.rdi), r15=hex(ctx.r15))
+                                if name in action_state_names:
+                                    fields.update(action_state_snapshot(ctx, read_bytes, read_u64))
+                                if name in effect_dispatch_names:
+                                    fields.update(effect_dispatch_snapshot(ctx, read_bytes, read_u64))
+                                if name in condition_request_names:
+                                    fields.update(condition_request_snapshot(ctx, read_bytes, read_u64))
+                                if name in condition_return_names:
+                                    fields.update(condition_return_snapshot(ctx, read_bytes, read_u64,
+                                        {'ConditionInsertReturnSite': 'insert', 'ConditionRequestReturnSite': 'common', 'ConditionRemoveEntry': 'remove-entry',
+                                         'ConditionRemoveReturnSite': 'remove-return'}.get(name, 'dispatch'), module_base))
+                                if name in queue_store_names:
+                                    fields.update(queue_transition_snapshot(ctx, read_bytes, read_u64, "store"))
+                                if name in queue_resume_names:
+                                    fields.update(queue_transition_snapshot(ctx, read_bytes, read_u64, "resume"))
+                                if name in action_setup_names:
+                                    fields.update(action_setup_snapshot(ctx, read_bytes, read_u64))
+                                if name in animation_request_names:
+                                    fields.update(animation_launch_snapshot(ctx, read_bytes, read_u64, "request"))
+                                if name in animation_accepted_names:
+                                    fields.update(animation_launch_snapshot(ctx, read_bytes, read_u64, "accepted", module_base))
+                                if name in actor_state_dispatch_names:
+                                    fields.update(actor_state_dispatch_snapshot(ctx, read_bytes, read_u64))
+                                if name in script_dispatch_names:
+                                    script_name = read_c_string(ctx.r8)
+                                    if script_name_contains and not any(
+                                            needle.casefold() in (script_name or "").casefold()
+                                            for needle in script_name_contains):
+                                        continue
+                                    dispatch_context_rcx = read_bytes(ctx.rcx, 0x80)
+                                    dispatch_context_r9 = read_bytes(ctx.r9, 0x80)
+                                    dispatch_r9_first = read_u64(ctx.r9) if ctx.r9 else None
+                                    fields.update(script_name=script_name,
+                                                  script_name_ptr=hex(ctx.r8),
+                                                  dispatch_caller=hex(read_u64(ctx.rsp) or 0),
+                                                  dispatch_rcx_80=(dispatch_context_rcx.hex()
+                                                                   if dispatch_context_rcx is not None else None),
+                                                  dispatch_r9_80=(dispatch_context_r9.hex()
+                                                                  if dispatch_context_r9 is not None else None),
+                                                  dispatch_r9_first=hex(dispatch_r9_first)
+                                                  if dispatch_r9_first is not None else None,
+                                                  dispatch_r9_first_i32=read_i32(dispatch_r9_first)
+                                                  if dispatch_r9_first else None)
                                 if name == "BattleInit":
                                     heal_diagnostics = 0
                                     descriptor_diagnostics = 0
@@ -432,6 +557,25 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                                   turn_object_400=(turn_bytes.hex()
                                                                    if turn_bytes is not None else None))
                                     if name == "BattleCommandBegin":
+                                        # This RVA is mid-function, before the callback
+                                        # arguments are populated. Preserve the objects
+                                        # actually consumed by +0x1175C8/+0x117651 and
+                                        # the raw stack; [RSP] is not a return address.
+                                        callback_object = read_u64(ctx.rbx + 0xF0)
+                                        callback_context = (read_u64(callback_object + 0x328)
+                                                            if callback_object else None)
+                                        actor_link = read_u64(ctx.rcx + 0x328)
+                                        for prefix, pointer, size in (
+                                                ("command_rbx", ctx.rbx, 0x400),
+                                                ("command_rsi", ctx.rsi, 0x400),
+                                                ("command_rdi", ctx.rdi, 0x400),
+                                                ("command_stack", ctx.rsp, 0x100),
+                                                ("command_callback_context", callback_context, 0x400),
+                                                ("command_actor_link", actor_link, 0x400)):
+                                            snapshot = read_bytes(pointer, size) if pointer else None
+                                            fields[prefix + "_ptr"] = hex(pointer) if pointer else None
+                                            fields[prefix + "_raw"] = (snapshot.hex()
+                                                                       if snapshot is not None else None)
                                         actor_bytes = read_bytes(ctx.rcx, 0x400)
                                         active_command = read_u64(ctx.rdi + 0x2C30)
                                         active_bytes = (read_bytes(active_command, 0x400)
@@ -450,7 +594,10 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                     link_5a8 = read_u64(ctx.rcx + 0x5A8)
                                     return_address = read_u64(ctx.rsp)
                                     fields.update(effect_context=hex(ctx.rcx),
-                                                  signed_delta=ct.c_int32(ctx.rdx & 0xFFFFFFFF).value,
+                                                  effect_kind_candidate=ctx.rdx & 0xFFFFFFFF,
+                                                  amount_argument_candidate=ct.c_int32(
+                                                      ctx.r8 & 0xFFFFFFFF).value,
+                                                  apply_flag_candidate=ctx.r9 & 0xFF,
                                                   target_status_ptr=hex(target) if target is not None else None,
                                                   link_590=hex(link_590) if link_590 is not None else None,
                                                   link_5a8=hex(link_5a8) if link_5a8 is not None else None,
@@ -458,6 +605,140 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                                   if return_address is not None else None,
                                                   context_words=[hex(word) for word in struct.unpack("<16Q", words)]
                                                   if words is not None else None)
+                                if name in effect_application_names:
+                                    effect_context = ctx.rdi
+                                    source_context = ctx.rsi
+                                    target_status = read_u64(effect_context) if effect_context else None
+                                    source_status = read_u64(source_context) if source_context else None
+                                    result_data = read_bytes(ctx.r15, 0x100) if ctx.r15 else None
+                                    effect_data = read_bytes(effect_context, 0x600) \
+                                        if effect_context else None
+                                    source_data = read_bytes(source_context, 0x600) \
+                                        if source_context else None
+                                    fields.update(effect_context_ptr=(hex(effect_context)
+                                                                      if effect_context else None),
+                                                  effect_context_600=(effect_data.hex()
+                                                                      if effect_data is not None else None),
+                                                  effect_context_kind_candidate=read_i32(
+                                                      effect_context + 0x10) if effect_context else None,
+                                                  effect_context_param_18_candidate=read_i32(
+                                                      effect_context + 0x18) if effect_context else None,
+                                                  target_status_ptr=(hex(target_status)
+                                                                     if target_status else None),
+                                                  target_actor_id=read_i32(target_status)
+                                                  if target_status else None,
+                                                  source_context_ptr=(hex(source_context)
+                                                                      if source_context else None),
+                                                  source_context_600=(source_data.hex()
+                                                                      if source_data is not None else None),
+                                                  source_status_ptr=(hex(source_status)
+                                                                     if source_status else None),
+                                                  source_actor_id=read_i32(source_status)
+                                                  if source_status else None,
+                                                  source_target_result_list=bounded_context_list(
+                                                      source_context, 0x230, 0x238, 0x10, 32),
+                                                  source_status_effect_list=bounded_context_list(
+                                                      source_context, 0x5E0, 0x5E8, 8, 32),
+                                                  target_status_effect_list=bounded_context_list(
+                                                      effect_context, 0x5E0, 0x5E8, 8, 32),
+                                                  apply_argument_amount=ct.c_int32(
+                                                      ctx.rdx & 0xFFFFFFFF).value,
+                                                  calculated_amount_ebx=ct.c_int32(
+                                                      ctx.rbx & 0xFFFFFFFF).value,
+                                                  result_entry_ptr=hex(ctx.r15) if ctx.r15 else None,
+                                                  result_entry_amount=read_i32(ctx.r15)
+                                                  if ctx.r15 else None,
+                                                  result_flags_70=read_u32(ctx.r15 + 0x70)
+                                                  if ctx.r15 else None,
+                                                  result_type_78=read_i32(ctx.r15 + 0x78)
+                                                  if ctx.r15 else None,
+                                                  result_entry_100=(result_data.hex()
+                                                                    if result_data is not None else None),
+                                                  stack_top_qword=hex(read_u64(ctx.rsp) or 0))
+                                    if module_base is not None and ctx.rip - module_base == 0xE1A67:
+                                        # At this exact-build mid-function call site, R14
+                                        # points at a candidate t_skill row for controlled
+                                        # Tear heals. Preserve the row before memory changes.
+                                        fields.update(skill_row_candidate(ctx.r14))
+                                if name in effect_row_call_names:
+                                    row_ptr = ctx.rcx
+                                    effect_context = ctx.r15
+                                    target_status = read_u64(effect_context) if effect_context else None
+                                    row_data = read_bytes(row_ptr, 0x40) if row_ptr else None
+                                    row_kind = (read_bytes(row_ptr + 0x10, 1)
+                                                if row_ptr else None)
+                                    lookup_byte = read_bytes(ctx.rbx + 0xB8, 1) if ctx.rbx else None
+                                    fields.update(effect_row_ptr=hex(row_ptr) if row_ptr else None,
+                                                  effect_row_40=(row_data.hex()
+                                                                 if row_data is not None else None),
+                                                  effect_row_kind_candidate=(
+                                                      row_kind[0] if row_kind is not None else None),
+                                                  effect_row_value_14_candidate=read_i32(
+                                                      row_ptr + 0x14) if row_ptr else None,
+                                                  effect_row_value_18_candidate=read_i32(
+                                                      row_ptr + 0x18) if row_ptr else None,
+                                                  effect_row_lookup_byte_candidate=(
+                                                      lookup_byte[0] if lookup_byte is not None else None),
+                                                  effect_owner_object_candidate=(
+                                                      hex(ctx.rbx) if ctx.rbx else None),
+                                                  effect_target_context_candidate=(
+                                                      hex(effect_context) if effect_context else None),
+                                                  effect_target_status_candidate=(
+                                                      hex(target_status) if target_status else None),
+                                                  effect_target_actor_id_candidate=(
+                                                      read_i32(target_status) if target_status else None),
+                                                  base_amount_candidate=ct.c_int32(
+                                                      ctx.rdx & 0xFFFFFFFF).value,
+                                                  row_amount_operand_candidate=ct.c_int32(
+                                                      ctx.rax & 0xFFFFFFFF).value,
+                                                  stack_top_qword=hex(read_u64(ctx.rsp) or 0))
+                                if name in resource_set_names:
+                                    status_ptr = ctx.rcx
+                                    property_code = ctx.rdx & 0xFFFFFFFF
+                                    resource_layouts = {
+                                        7: ("hp", 0x0C, 0x10, "set"),
+                                        8: ("hp", 0x0C, 0x10, "add"),
+                                        9: ("ep", 0x14, 0x18, "set"),
+                                        10: ("ep", 0x14, 0x18, "add"),
+                                        11: ("cp", 0x1C, 0x20, "set"),
+                                        12: ("cp", 0x1C, 0x20, "add"),
+                                    }
+                                    layout = resource_layouts.get(property_code)
+                                    current_offset = layout[1] if layout else None
+                                    maximum_offset = layout[2] if layout else None
+                                    status_data = read_bytes(status_ptr, 0x120) if status_ptr else None
+                                    caller_return = read_u64(ctx.rsp)
+                                    caller_return_rva = (caller_return - module_base
+                                                         if caller_return is not None
+                                                         and module_base is not None
+                                                         and caller_return >= module_base else None)
+                                    fields.update(status_ptr=hex(status_ptr) if status_ptr else None,
+                                                  status_actor_id=read_i32(status_ptr)
+                                                  if status_ptr else None,
+                                                  property_code=property_code,
+                                                  operation_candidate=layout[3] if layout else None,
+                                                  resource_candidate=layout[0] if layout else None,
+                                                  value_offset_candidate=(hex(current_offset)
+                                                                          if current_offset is not None else None),
+                                                  maximum_offset_candidate=(hex(maximum_offset)
+                                                                            if maximum_offset is not None else None),
+                                                  requested_value=ct.c_int32(ctx.r8 & 0xFFFFFFFF).value,
+                                                  value_before=(read_i32(status_ptr + current_offset)
+                                                                if current_offset is not None else None),
+                                                  maximum_before=(read_i32(status_ptr + maximum_offset)
+                                                                  if maximum_offset is not None else None),
+                                                  status_120=(status_data.hex()
+                                                              if status_data is not None else None),
+                                                  caller_return=hex(caller_return or 0),
+                                                  caller_return_rva=(hex(caller_return_rva)
+                                                                     if caller_return_rva is not None
+                                                                     else None))
+                                    if caller_return_rva == 0xE1FAD:
+                                        # On this exact CP path, R14 is loaded from
+                                        # [RSP+0x70] before the amount is applied. Live
+                                        # controls showed a t_skill row there; do not use
+                                        # this meaning for other setter callers.
+                                        fields.update(skill_row_candidate(ctx.r14))
                                 if name in result_entry_names:
                                     target_status = read_u64(ctx.rcx)
                                     candidate_source_status = read_u64(ctx.rdx)
@@ -611,8 +892,17 @@ def trace(pid, specs, seconds, use_rvas, max_hits, write_specs=(),
                                                   stack_words=[hex(word) for word in struct.unpack("<8Q", stack)]
                                                   if stack is not None else None)
                                     prior_values[name] = value
+                                    if name in pointer_writes:
+                                        root_slot, owner, offset = pointer_writes[name]
+                                        fields.update(pointer_root_slot=hex(root_slot),
+                                                      pointer_root_at_arm=hex(owner),
+                                                      pointer_root_now=hex(read_u64(root_slot) or 0),
+                                                      pointer_offset=hex(offset),
+                                                      low_byte_after=value & 0xFF if value is not None else None)
+                                        if name == 'BattleModeWrite' and offset == 0x2D30:
+                                            fields.update(battle_mode_write_snapshot(read_u64(root_slot), read_bytes, read_u64))
                                 emit("hit", **fields)
-                            if hit_count >= max_hits:
+                            if not until_stop_file and hit_count >= max_hits:
                                 emit("hit_limit", count=hit_count)
                                 deadline = time.monotonic()
                         # RF resumes past an execution breakpoint for one instruction.
@@ -676,12 +966,24 @@ def main():
     parser.add_argument("--max-hits", type=int, default=2000)
     parser.add_argument("--stop-file", type=Path,
                         help="Detach cleanly when this sentinel file appears")
+    parser.add_argument("--until-stop-file", action="store_true",
+                        help="Capture until --stop-file appears; disable duration and hit-count limits")
     parser.add_argument("--write-address", action="append", type=parse_named_address,
                         help="Four-byte aligned address to watch for writes (repeat)")
+    parser.add_argument('--write-pointer-rva', action='append', type=parse_pointer_write, default=[],
+                        help='Resolve [module+ROOT_RVA]+OFFSET before arming a four-byte write watch')
+    parser.add_argument('--write-pointer-address', action='append', type=parse_pointer_write, default=[],
+                        help='Resolve [ROOT_ADDRESS]+OFFSET before arming a four-byte write watch')
     parser.add_argument("--inspect-hp-set", action="append", default=[], metavar="NAME",
                         help="At this named execution breakpoint, read status HP at RSI+0xC/+0x10")
     parser.add_argument("--inspect-effect-entry", action="append", default=[], metavar="NAME",
                         help="At this named execution breakpoint, read effect context and target pointer")
+    parser.add_argument("--inspect-effect-application", action="append", default=[], metavar="NAME",
+                        help="At an observed effect-row call, read its record, amount, and target status")
+    parser.add_argument("--inspect-effect-row-call", action="append", default=[], metavar="NAME",
+                        help="At a candidate effect-row caller, read its table row and amount operands")
+    parser.add_argument("--inspect-resource-set", action="append", default=[], metavar="NAME",
+                        help="At the generic status-property setter, record property key and before/value fields")
     parser.add_argument("--inspect-result-entry", action="append", default=[], metavar="NAME",
                         help="At a candidate result function entry, snapshot raw descriptor and actor IDs")
     parser.add_argument("--inspect-attack-call", action="append", default=[], metavar="NAME",
@@ -696,6 +998,32 @@ def main():
                         help="At first attack for each status pointer, collect context/status and actor links")
     parser.add_argument("--inspect-turn-context", action="append", default=[], metavar="NAME",
                         help="At a turn callback, read bounded raw context bytes for move-ID research")
+    parser.add_argument("--inspect-action-state", action="append", default=[], metavar="NAME",
+                        help="At +0x1179A0 state entry, preserve raw state/actor and +C70/+C78/+C88 links")
+    parser.add_argument("--inspect-effect-dispatch", action="append", default=[], metavar="NAME",
+                        help="At +0xDBE40 entry, preserve raw contexts, descriptor, code and parameter block")
+    parser.add_argument("--inspect-condition-request", action="append", default=[], metavar="NAME",
+                        help="At +0x7F750 entry, preserve raw request and bounded condition vector before the call")
+    parser.add_argument("--inspect-condition-return", action="append", default=[], metavar="NAME",
+                        help="At +0xDE962 after the condition call, preserve the raw vector and EAX")
+    parser.add_argument("--inspect-queue-store", action="append", default=[], metavar="NAME",
+                        help="At +0x68E20 before the descriptor store, snapshot raw RBX actor and R9")
+    parser.add_argument("--inspect-queue-resume", action="append", default=[], metavar="NAME",
+                        help="At +0x69111 before pending-descriptor clear, snapshot raw RBP actor")
+    parser.add_argument("--inspect-action-setup", action="append", default=[], metavar="NAME",
+                        help="At +0x68F80 entry, preserve raw RCX actor, RDX descriptor and linked contexts")
+    parser.add_argument("--inspect-animation-request", action="append", default=[], metavar="NAME",
+                        help="At +0x215320 entry, preserve actor context, script, inline descriptors and call frame")
+    parser.add_argument("--inspect-animation-accepted", action="append", default=[], metavar="NAME",
+                        help="At +0x21558F after the queue call, preserve matching nonvolatile context and call frame")
+    parser.add_argument("--inspect-actor-state-dispatch", action="append", default=[], metavar="NAME",
+                        help="At +0x7A68B before the state-handler call, preserve owner, state row and descriptors")
+    parser.add_argument("--first-state-update-only", action="append", default=[], metavar="NAME",
+                        help="Exclude verified non-first frame updates at an inspected actor-state dispatch; retain unknown layouts")
+    parser.add_argument("--inspect-script-dispatch", action="append", default=[], metavar="NAME",
+                        help="Read the script-name argument and bounded call contexts at a script dispatch")
+    parser.add_argument("--script-name-contains", action="append", default=[], metavar="TEXT",
+                        help="When inspecting script dispatch, record only names containing TEXT")
     parser.add_argument("--inspect-critical-popup", action="append", default=[], metavar="NAME",
                         help="At the command-battle Critical popup call, read its enum and flags")
     parser.add_argument("--enemy-table-pac", type=Path,
@@ -704,16 +1032,31 @@ def main():
     specs = args.rva or args.address
     specs = specs or []
     write_specs = args.write_address or []
-    if not 0 < len(specs) + len(write_specs) <= 4 or args.seconds <= 0 or args.max_hits <= 0:
+    pointer_specs = [(name, root, offset, True) for name, root, offset in args.write_pointer_rva]
+    pointer_specs += [(name, root, offset, False) for name, root, offset in args.write_pointer_address]
+    if not 0 < len(specs) + len(write_specs) + len(pointer_specs) <= 4 or args.seconds <= 0 or args.max_hits <= 0:
         parser.error("one to four breakpoints, a positive duration and hit limit are required")
-    if len({name for name, _ in specs + write_specs}) != len(specs) + len(write_specs):
+    if args.until_stop_file and args.stop_file is None:
+        parser.error("--until-stop-file requires --stop-file")
+    all_names = [name for name, _ in specs + write_specs] + [s[0] for s in pointer_specs]
+    if len(set(all_names)) != len(all_names):
         parser.error("breakpoint names must be unique")
     execution_names = {candidate for candidate, _ in specs}
     if any(name not in execution_names for name in
-           args.inspect_hp_set + args.inspect_effect_entry + args.inspect_result_entry
+           args.inspect_hp_set + args.inspect_effect_entry + args.inspect_effect_application
+           + args.inspect_effect_row_call + args.inspect_resource_set + args.inspect_result_entry
            + args.inspect_attack_call
-           + args.inspect_turn_context + args.inspect_critical_popup):
+           + args.inspect_turn_context + args.inspect_critical_popup
+           + args.inspect_script_dispatch + args.inspect_action_state
+           + args.inspect_effect_dispatch + args.inspect_condition_request
+           + args.inspect_condition_return + args.inspect_queue_store + args.inspect_queue_resume
+           + args.inspect_action_setup + args.inspect_animation_request + args.inspect_animation_accepted
+           + args.inspect_actor_state_dispatch):
         parser.error("inspection options must name an execution breakpoint")
+    if any(name not in args.inspect_actor_state_dispatch for name in args.first_state_update_only):
+        parser.error("--first-state-update-only requires --inspect-actor-state-dispatch for the same name")
+    if args.script_name_contains and not args.inspect_script_dispatch:
+        parser.error("script-name filters require --inspect-script-dispatch")
     if any(name not in args.inspect_attack_call for name in
            args.inspect_actor_bytes + args.inspect_actor_identity + args.inspect_result_frame
            + args.inspect_effect_descriptor):
@@ -728,6 +1071,9 @@ def main():
     trace(args.pid, specs, args.seconds, use_rvas=bool(args.rva), max_hits=args.max_hits,
           write_specs=write_specs, hp_set_names=set(args.inspect_hp_set),
           effect_entry_names=set(args.inspect_effect_entry),
+          effect_application_names=set(args.inspect_effect_application),
+          effect_row_call_names=set(args.inspect_effect_row_call),
+          resource_set_names=set(args.inspect_resource_set),
           attack_call_names=set(args.inspect_attack_call),
           actor_bytes_names=set(args.inspect_actor_bytes),
           actor_identity_names=set(args.inspect_actor_identity),
@@ -736,7 +1082,21 @@ def main():
           turn_context_names=set(args.inspect_turn_context),
           result_entry_names=set(args.inspect_result_entry),
           critical_popup_names=set(args.inspect_critical_popup),
-          stop_file=args.stop_file, enemy_signatures=enemy_signatures)
+          script_dispatch_names=set(args.inspect_script_dispatch),
+          script_name_contains=args.script_name_contains,
+          action_state_names=set(args.inspect_action_state),
+          effect_dispatch_names=set(args.inspect_effect_dispatch),
+          condition_request_names=set(args.inspect_condition_request),
+          condition_return_names=set(args.inspect_condition_return),
+          queue_store_names=set(args.inspect_queue_store),
+          queue_resume_names=set(args.inspect_queue_resume),
+          action_setup_names=set(args.inspect_action_setup),
+          animation_request_names=set(args.inspect_animation_request),
+          animation_accepted_names=set(args.inspect_animation_accepted),
+          actor_state_dispatch_names=set(args.inspect_actor_state_dispatch),
+          first_state_update_names=set(args.first_state_update_only),
+          stop_file=args.stop_file, enemy_signatures=enemy_signatures,
+          until_stop_file=args.until_stop_file, pointer_write_specs=pointer_specs)
 
 
 if __name__ == "__main__":

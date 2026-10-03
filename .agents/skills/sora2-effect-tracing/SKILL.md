@@ -3,16 +3,18 @@ name: sora2-effect-tracing
 description: Plan and capture live command-battle effects from action execution through resource or status outcomes, including healing, no-damage casts, interrupts, HP, EP, and CP. Use for live probes, raw event correlation, and effect-log coverage; use sora2-meter-lookup for table-join implementation.
 ---
 
-# Trace game effects into the log
+# Trace action and effect observations
 
-Work in Sora2-Details. Follow the required [effect tracing and lookup evidence practice](../../../docs/EFFECT-TRACE-AND-LOOKUP-PRACTICE.md) and the [combat log coverage contract](../../../docs/COMBAT-LOG-PRIORITY.md). Read [the capture protocol](../../../docs/CAPTURE-PROTOCOL.md) and relevant entries in [the hook research handoff](../../../docs/HOOK-RESEARCH-HANDOFF.md) before changing a live profile.
+Read [the research workflow](../../../docs/RESEARCH-WORKFLOW.md), [evidence practice](../../../docs/EFFECT-TRACE-AND-LOOKUP-PRACTICE.md), and the relevant capture packet before changing hooks. Use effect-lookup when interpreting keys.
 
-When a user reports a capture or logging defect, follow the [problem-solving protocol](../../../docs/PROBLEM-SOLVING-PROTOCOL.md). Trace the failing mode end to end, use saved traces first, and do not confuse helper detach with desktop-app exit.
+Finish saved-trace analysis before requesting live controls. Prepare the exact executable hash, four-slot hook budget, bounded memory reads, raw fields, missing contrast, projection path, and cleanup ownership. Pick the smallest sequence that distinguishes the remaining hypotheses; do not repeat controls already answered by saved evidence.
 
-Before requesting an in-game action, inspect all saved traces and user-confirmed controls. State the missing evidence, the exact profile/hooks that will collect it, and verify the trace reports `armed`. Do not ask the player to repeat an action that the existing trace can answer. After a probe/profile change, ask only for a control needed to distinguish the remaining hypotheses.
+Use `tools/run_action_stream_probe.ps1` in manual-stop mode for player research. Verify the raw armed marker, helper PIDs, first committed projection and viewer before announcing readiness. Keep capture armed through the player's completion report and inspection of the saved sequence, then write its sentinel and verify detach and helper exit. No duration/hit cutoff, special keyword, or additional stop approval. Genuine capture errors and game exit are separate outcomes. Continue offline analysis autonomously afterward.
 
-Keep raw observation and semantic interpretation separate. Correlate command/action entry to each effect and resource write with stable IDs and sequence evidence; preserve source, target, amount, and action as unknown where unresolved. A resource write does not prove which command caused it, and absence of a write does not prove an action was a miss, canceled, interrupted, or harmless.
+`Transcript` registers an app-owned session and starts the research bridge. Focused profiles require explicit projection/viewer ownership; a raw launcher alone is not proof of display. `HealingResearch` projects partial encounter history; `HealingCrossCheck` is raw-only. Preserve these distinctions.
 
-Use a coverage ledger with one row per effect class: hook candidate, observed raw event, actor/action correlation, table lookup, persisted record, and displayed projection. Include healing sources, no-HP actions, interrupts, HP/EP/CP changes, status outcomes, and multi-target effects. Mark tested classes and remaining gaps explicitly. Preserve the exact executable fingerprint, trace path, start/stop evidence, and any capture gaps.
+Persist one observation for every raw record, including unknown kinds and failed calls. Keep action execution, queued/resumed descriptors, effect dispatches, resource setters, condition requests/returns, and outcomes separate. Correlate only on verified path, thread, actor/target and inline descriptor evidence. Reset pending links across gaps. Chat order, player annotations and trace timestamps are independent evidence.
 
-When a raw action, actor, item, skill, or resource key needs a table join, hand off to [sora2-effect-lookup](../sora2-effect-lookup/SKILL.md). Do not wire a candidate pointer, amount pattern, or table value into the production event label.
+Disassemble the exact hash before interpreting registers, frame offsets or caller RVAs. Mid-function stack values are not automatically return addresses. Capture complete inline bytes while paused; later reads of the same pointer do not prove identity or lifetime. Missing writes cannot prove a miss, interrupt or immunity.
+
+After completion, back up derived records, reproject from immutable raw data, reconcile observation count/order and inspect the WPF view. Report positive evidence, unresolved attribution and the one next missing control. Downstream effective-stat deltas require runtime before/after reads; table values and condition parameters alone are insufficient.

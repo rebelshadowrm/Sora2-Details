@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private readonly FileSystemWatcher _historyWatcher;
     private readonly CancellationTokenSource _captureCancellation = new();
     private readonly Task _captureTask;
+    private readonly string _capturePipeName;
     private IReadOnlyList<Encounter> _encounters = [];
     private readonly bool _researchMode;
     private string? _captureError;
@@ -38,8 +39,11 @@ public partial class MainWindow : Window
     private int? _currentGamePid;
     private DateTimeOffset? _observedResetAt;
 
-    public MainWindow()
+    public MainWindow() : this(CapturePipeSource.DefaultPipeName) { }
+
+    public MainWindow(string capturePipeName)
     {
+        _capturePipeName = capturePipeName;
         InitializeComponent();
         if (WindowPlacement.Load("meter-window.json") is { } placement)
         {
@@ -60,9 +64,8 @@ public partial class MainWindow : Window
         {
             RefreshCaptureStatus();
             var resetAt = ActiveSessionResetAt();
-            if (resetAt == _observedResetAt) return;
+            if (resetAt != _observedResetAt && resetAt is not null) _followNewest = true;
             _observedResetAt = resetAt;
-            if (resetAt is not null) _followNewest = true;
             ReloadHistory();
         };
         Loaded += (_, _) => _placementReady = true;
@@ -337,7 +340,7 @@ public partial class MainWindow : Window
         try
         {
             var recorder = new EncounterRecorder(_store);
-            await recorder.RunAsync(new CapturePipeSource(), _captureCancellation.Token);
+            await recorder.RunAsync(new CapturePipeSource(_capturePipeName), _captureCancellation.Token);
         }
         catch (OperationCanceledException) when (_captureCancellation.IsCancellationRequested) { }
         catch (Exception exception)
@@ -359,13 +362,20 @@ public partial class MainWindow : Window
         try { recorded = _store.LoadAll(); }
         catch (System.IO.IOException) { return; } // A writer may still be replacing a snapshot.
         _encounters = recorded;
+        foreach (var timeline in OwnedWindows.OfType<TimelineWindow>())
+        {
+            var updated = _encounters.FirstOrDefault(encounter => encounter.Id == timeline.EncounterId);
+            if (updated is not null) timeline.RefreshEncounter(updated);
+        }
         var activeTrace = ActiveTraceName();
         var newest = _encounters.OrderByDescending(e => e.StartedAt).FirstOrDefault();
         var resetAt = activeTrace is null ? null : ActiveSessionResetAt();
         var current = activeTrace is null ? null : _encounters.FirstOrDefault(e =>
             e.Issues?.Contains($"Raw trace: {activeTrace}") == true &&
             (resetAt is null || e.StartedAt > resetAt.Value));
-        SelectEncounter(_followNewest ? current :
+        var followed = EncounterHistoryView.FollowNewest(_encounters,
+            captureActive: activeTrace is not null, currentCaptureEncounter: current);
+        SelectEncounter(_followNewest ? followed :
             _encounters.FirstOrDefault(e => e.Id == _selectedEncounter?.Id) ?? newest);
     }
 
@@ -389,6 +399,10 @@ public partial class MainWindow : Window
     private void RenderMeter()
     {
         RefreshCaptureStatus();
+        CombatLogButton.IsEnabled = _selectedEncounter is not null;
+        CombatLogButton.ToolTip = _selectedEncounter is { } logEncounter
+            ? $"Full recorded combat log · {logEncounter.Events.Count:N0} entries"
+            : "No recorded encounter is selected";
         ModeButton.Content = _mode switch
         {
             MeterMode.PlayerDamage => "Player Damage Dealt  ▾",
@@ -408,18 +422,23 @@ public partial class MainWindow : Window
             ? (encounterClassification == BossClassification.Unclassified
                 ? "" : EncounterHistoryView.ClassificationMarker(encounterClassification)) + shown.Label :
             (resetWaiting ? "Session reset · waiting for battle" :
-                waiting ? "Waiting for next command battle" : "No encounter selected");
+                waiting ? "Waiting for first command callback" : "No encounter selected");
         if (_selectedEncounter is null)
         {
             MeterRows.ItemsSource = null;
             BackButton.Visibility = Visibility.Collapsed;
             FooterLabel.Text = resetWaiting ? "Previous fight is in history · awaiting battle entry" :
-                waiting ? "Capture armed · enter a new command battle" :
-                CaptureMayBeActive() ? "No encounter yet · capture is waiting for a command battle" :
+                waiting ? "Capture armed · waiting for a command callback" :
+                CaptureMayBeActive() ? "No encounter yet · capture is waiting for a command callback" :
                 "Saved history is available from the tray";
             FooterLabel.ToolTip = waiting
-                ? "A battle already open when capture starts cannot be reconstructed. Open the encounter menu for saved fights."
+                ? "Capture starts at the first observed command callback. If it attaches mid-battle, earlier actions and entry state are missing; later observations appear as a partial encounter."
                 : null;
+            if (_store.LoadIssues.Count > 0)
+            {
+                FooterLabel.Text = "History warning · some files could not be loaded";
+                FooterLabel.ToolTip = string.Join(Environment.NewLine, _store.LoadIssues);
+            }
             return;
         }
 
@@ -481,13 +500,19 @@ public partial class MainWindow : Window
         var quality = _selectedEncounter.Outcome == EncounterOutcome.InProgress
             ? livePartial ? "  ·  LIVE PARTIAL" : "  ·  IN PROGRESS"
             : _selectedEncounter.IsComplete ? "" : "  ·  PARTIAL";
-        FooterLabel.Text = $"{displayedTotal:N0} total{quality}  ·  " +
+        FooterLabel.Text = $"{displayedTotal:N0} total{quality}  ·  {_selectedEncounter.Events.Count:N0} log entries  ·  " +
             (_mode == MeterMode.Deaths && _sourceKey is not null
                 ? "click a death for recap · right-click to go back"
                 : _moveKey is not null ? "right-click to go back" : "hover to preview · click to enter");
         FooterLabel.ToolTip = _selectedEncounter.Issues is { Count: > 0 }
             ? string.Join(Environment.NewLine, _selectedEncounter.Issues)
             : _selectedEncounter.Outcome == EncounterOutcome.InProgress ? "Encounter is still in progress." : null;
+        if (_store.LoadIssues.Count > 0)
+        {
+            FooterLabel.Text += " · HISTORY WARNING";
+            FooterLabel.ToolTip = string.Join(Environment.NewLine,
+                _store.LoadIssues.Prepend(FooterLabel.ToolTip?.ToString() ?? ""));
+        }
     }
 
     private void ModeButton_Click(object sender, RoutedEventArgs e)

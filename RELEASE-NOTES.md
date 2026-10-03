@@ -1,4 +1,22 @@
-# Sora 2 Details 0.2.0 preview 19
+# Sora 2 Details 0.2.0 preview 21
+
+Preview 20 was an unpublished local audit build. This release uses a newer version so that installation and update checks can distinguish it from that candidate.
+
+- Flush captured events while idle and update already-open timelines; show the saved log entry count.
+- Add tray capture-mode selection so effect research uses the same app and log view.
+- Add a partial action-stream recorder and live/saved transcript viewer. Preserve unknown observations and verify replay against the committed raw source.
+- Enrich research timelines with action/queue candidates, generated item identities, condition changes and scoped cure/expiry/Overdrive candidates. Keep these separate from meter totals.
+- Show unique animation-name matches as explicit candidates while preserving unresolved native move IDs.
+- Keep player research armed until manual stop; wait for the first armed ledger before reporting the action viewer ready.
+- Isolate corrupt history files and report warnings while keeping healthy history available.
+- Fix settings slider initialization and dark close-dialog checkbox text.
+- Require inline exact-table row evidence for healing/support labels; remove unsupported cross-trace pointer labels. Strengthen numeric healing and attack pairing with path and amount checks.
+- Add desktop shutdown/settings/projection regression checks, a history evidence inventory and an audit/readiness protocol.
+- Build installer artifacts separately from source-run app files so packaging can complete while the existing desktop remains open.
+- Combat capture remains partial. General critical/miss decoding, direct enemy unit keys, support ownership and effective-stat changes remain open. New descriptor text snapshots still need live validation. Simulated desktop checks do not establish full game coverage.
+
+## Preview 19
+
 
 ## Shutdown, settings, and effect research
 

@@ -109,7 +109,7 @@ public sealed class EncounterAssembler
                 $"Command battle {start.At:HH:mm:ss} · {outcome}",
                 start.At, outcome, (outcome is EncounterOutcome.Victory or
                 EncounterOutcome.Escape or EncounterOutcome.Defeat) && issues.Count == 0,
-                start.Actors.ToArray(), ordered, issues);
+                start.Actors.ToArray(), ordered, issues, SchemaVersion: 2);
         }
     }
 }

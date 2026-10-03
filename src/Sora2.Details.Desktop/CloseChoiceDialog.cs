@@ -40,6 +40,7 @@ internal sealed class CloseChoiceDialog : Window
         _rememberChoice = new CheckBox
         {
             Content = "Remember this choice",
+            Foreground = Brushes.White,
             Margin = new Thickness(0, 14, 0, 12)
         };
         panel.Children.Add(_rememberChoice);

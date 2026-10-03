@@ -29,6 +29,9 @@ public partial class MainWindow
     private Forms.ToolStripMenuItem? _trayStopCapture;
     private Forms.ToolStripMenuItem? _trayRestoreInteraction;
     private bool _exitWhenTrayMenuCloses;
+    private Forms.ToolStripMenuItem? _liveProfileChoice;
+    private Forms.ToolStripMenuItem? _researchProfileChoice;
+    private Forms.ToolStripMenuItem? _transcriptProfileChoice;
 
     private void InitializeWindowInteraction()
     {
@@ -48,6 +51,15 @@ public partial class MainWindow
             _trayHideMeter.Click += (_, _) => Dispatcher.BeginInvoke(HideMeterToTray);
             _trayMenu.Items.Add(_trayHideMeter);
             _trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            var captureMode = new Forms.ToolStripMenuItem("Capture mode");
+            _liveProfileChoice = new Forms.ToolStripMenuItem("Live command battles");
+            _researchProfileChoice = new Forms.ToolStripMenuItem("Effect research (one battle)");
+            _transcriptProfileChoice = new Forms.ToolStripMenuItem("Action stream (partial)");
+            _liveProfileChoice.Click += (_, _) => Dispatcher.BeginInvoke(() => SetCaptureProfile("Live"));
+            _researchProfileChoice.Click += (_, _) => Dispatcher.BeginInvoke(() => SetCaptureProfile("HealingResearch"));
+            _transcriptProfileChoice.Click += (_, _) => Dispatcher.BeginInvoke(() => SetCaptureProfile("Transcript"));
+            captureMode.DropDownItems.AddRange([_liveProfileChoice, _researchProfileChoice, _transcriptProfileChoice]);
+            _trayMenu.Items.Add(captureMode);
             _trayStartCapture = new Forms.ToolStripMenuItem("Start capture");
             _trayStartCapture.Click += (_, _) => Dispatcher.BeginInvoke(StartCaptureFromTray);
             _trayMenu.Items.Add(_trayStartCapture);
@@ -58,6 +70,9 @@ public partial class MainWindow
             var history = new Forms.ToolStripMenuItem("View previous logs/history");
             history.Click += (_, _) => Dispatcher.BeginInvoke(OpenHistoryFromTray);
             _trayMenu.Items.Add(history);
+            var transcript = new Forms.ToolStripMenuItem("Open recorded action stream…");
+            transcript.Click += (_, _) => Dispatcher.BeginInvoke(() => _ = OpenResearchTranscriptAsync());
+            _trayMenu.Items.Add(transcript);
             _trayClickThrough = new Forms.ToolStripMenuItem("Click-through")
             {
                 CheckOnClick = false
@@ -113,6 +128,14 @@ public partial class MainWindow
         // Close the WinForms popup before WPF closes the window and disposes the tray objects.
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Normal,
             new Action(RequestFullExit));
+    }
+
+    private void SetCaptureProfile(string profile)
+    {
+        if (_captureBusy || _updateBusy || CaptureMayBeActive()) return;
+        Environment.SetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE", profile);
+        RefreshTrayCommands();
+        RefreshCaptureStatus();
     }
 
     private static System.Drawing.Icon LoadApplicationIcon()
@@ -236,6 +259,24 @@ public partial class MainWindow
         if (_trayShowMeter is not null) _trayShowMeter.Enabled = !IsVisible;
         if (_trayHideMeter is not null) _trayHideMeter.Enabled = IsVisible;
         var pids = GetGamePids();
+        var canChangeProfile = !LiveCaptureDisabled && !_captureBusy && !_updateBusy && !CaptureMayBeActive();
+        var researchProfile = Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE") == "HealingResearch";
+        var transcriptProfile = Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE") == "Transcript";
+        if (_liveProfileChoice is not null)
+        {
+            _liveProfileChoice.Enabled = canChangeProfile;
+            _liveProfileChoice.Checked = !researchProfile && !transcriptProfile;
+        }
+        if (_researchProfileChoice is not null)
+        {
+            _researchProfileChoice.Enabled = canChangeProfile;
+            _researchProfileChoice.Checked = researchProfile;
+        }
+        if (_transcriptProfileChoice is not null)
+        {
+            _transcriptProfileChoice.Enabled = canChangeProfile;
+            _transcriptProfileChoice.Checked = transcriptProfile;
+        }
         if (_trayStartCapture is not null)
             _trayStartCapture.Enabled = pids.Length == 1 && !LiveCaptureDisabled && !_captureBusy && !_updateBusy && !CaptureMayBeActive();
         if (_trayStopCapture is not null)
@@ -265,6 +306,8 @@ public partial class MainWindow
         _trayStartCapture = null;
         _trayStopCapture = null;
         _trayRestoreInteraction = null;
+        _liveProfileChoice = null;
+        _researchProfileChoice = null;
     }
 
     private void ApplyWindowAppearance()

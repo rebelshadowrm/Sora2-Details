@@ -30,6 +30,11 @@ public static class EncounterHistoryView
         "Divine Pengu", "Major Vander", "Master Cryon", "Armored Hydra", "Ragnard"
     };
 
+    public static Encounter? FollowNewest(IEnumerable<Encounter> encounters,
+        bool captureActive, Encounter? currentCaptureEncounter) =>
+        captureActive ? currentCaptureEncounter :
+            encounters.OrderByDescending(encounter => encounter.StartedAt).FirstOrDefault();
+
     public static BossClassification Classify(Encounter encounter,
         IReadOnlySet<string> bossIds, IReadOnlySet<string> regularIds)
     {

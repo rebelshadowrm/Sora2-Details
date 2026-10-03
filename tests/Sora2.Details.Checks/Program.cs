@@ -1,5 +1,7 @@
 using Sora2.Details.Core;
 
+ResearchTranscriptChecks.Run();
+
 var path = Path.Combine(AppContext.BaseDirectory, "samples", "command-battles.json");
 var encounters = EncounterReplay.Load(path);
 var fight = encounters.Single(e => e.Id == "sample-001");
@@ -14,6 +16,16 @@ Check(bossFocused.Count == encounters.Count - 1 &&
     "boss-focused history keeps unknown fights visible and hides marked regular fights");
 Check(EncounterHistoryView.Visible(encounters, false, markedBosses, markedRegular).Count == encounters.Count,
     "all-fights history retains every encounter");
+var newestSavedEncounter = encounters.OrderByDescending(encounter => encounter.StartedAt).First();
+Check(EncounterHistoryView.FollowNewest(encounters, captureActive: false,
+          currentCaptureEncounter: null)?.Id == newestSavedEncounter.Id,
+    "follow-newest selects the latest saved fight after capture detaches");
+Check(EncounterHistoryView.FollowNewest(encounters, captureActive: true,
+          currentCaptureEncounter: null) is null,
+    "follow-newest waits for the active capture instead of showing an older fight");
+Check(EncounterHistoryView.FollowNewest(encounters, captureActive: true,
+          currentCaptureEncounter: fight)?.Id == fight.Id,
+    "follow-newest selects the encounter linked to the active capture");
 Check(EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("CONFIRMED BOSS") &&
       EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("Wolf A") &&
       EncounterHistoryView.Describe(fight, BossClassification.MarkedBoss).Contains("Wolf B"),
@@ -388,6 +400,12 @@ try
     await writerTask;
     Check(store.LoadAll().Single(e => e.Id == "replacement-stress").Label == "snapshot-29",
         "latest atomic replacement persists");
+    var healthyCount = store.LoadAll().Count;
+    File.WriteAllText(Path.Combine(directory, "corrupt.json"), "{broken");
+    File.WriteAllText(Path.Combine(directory, "wrong-filename.json"), "{\"id\":\"wrong-id\",\"actors\":[],\"events\":[]}");
+    Check(store.LoadAll().Count == healthyCount && store.LoadIssues.Count == 2,
+        "corrupt history files preserve healthy encounters and produce visible diagnostics");
+    Check(File.Exists(Path.Combine(directory, "corrupt.json")), "bad history evidence remains intact");
 }
 finally
 {

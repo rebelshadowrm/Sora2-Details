@@ -3,14 +3,16 @@ name: sora2-meter-distribution-ux
 description: Audit or improve Sora 2 Details startup, elevation prompts, Windows trust, and distribution footprint. Use for onboarding or runtime packaging UX; use sora2-meter-publish for release publication.
 ---
 
-Read [the distribution audit](../../../docs/DISTRIBUTION-UX.md) and inspect `tools/start_probe_session.ps1`, `src/Sora2.Details.CaptureHost/Program.cs`, and `tools/build_installer.ps1` before changing the privilege boundary.
+# Audit Windows startup and distribution behavior
 
-For startup, tray, update, or shutdown failures, follow the [problem-solving protocol](../../../docs/PROBLEM-SOLVING-PROTOCOL.md). Trace the visible command through app state and helper cleanup; distinguish a hidden/resident app from a detached capture helper.
+Read [the distribution audit](../../../docs/DISTRIBUTION-UX.md) and inspect Program, CaptureHost, session launchers and installer builder before changing privilege boundaries. Use [problem solving](../../../docs/PROBLEM-SOLVING-PROTOCOL.md) for startup, tray, update or shutdown defects.
 
-The supported installer elevates the branded capture host, which launches only its bundled Python and fixed session script. Keep the meter/updater unelevated. Preserve explicit initiating-user data paths across credential UAC, separate host/server PID readiness, game hash verification, bounded session lifetime, and clean detach before updates. Source and legacy ZIP launches still use Python directly.
+Normal desktop startup requests elevation once; CaptureHost, bundled Python, bridge and updater inherit that approved session. Velopack startup hooks run first. Preserve the initiating user's explicit data path across credential UAC, separate host/server readiness PIDs, executable hash gating and fixed bundled capture scripts. Do not restore obsolete guidance to keep the production meter unelevated.
 
-Distinguish UAC from publisher trust and SmartScreen reputation. Signing can improve reputation across versions but cannot promise no warnings or suppress consent. Check current Microsoft guidance before making signing recommendations; older Velopack reputation claims conflict with Microsoft's EV guidance. Use Velopack to sign the complete package lifecycle. `-RequireSigning` prevents an intended signed build from silently becoming unsigned; no configured identity means local unsigned artifacts only, not a claim of trusted distribution.
+Research player batches use manual sentinel stop as specified by [the workflow](../../../docs/RESEARCH-WORKFLOW.md); startup readiness waits are not capture durations. Preserve traces and verify cleanup before restart/update. A hidden app, detached probe and exited desktop are separate outcomes.
 
-Measure before changing snapshot frequency or runtime bundling. Keep raw capture durable and data outside replaceable install files. Check the audit's interactive validation gates, and distinguish a package smoke check from an installed update/UAC test. Do not attach to a live game just to test branding.
+Keep data outside installation files. Measure snapshot/runtime changes before changing them. Package smoke tests do not validate installed updates, Windows consent or publisher trust. Do not attach to a game merely to check branding.
 
-Use the build skill's Release checks plus the focused host-readiness test. Update the audit with measured findings and validation limits. Packaging alone does not authorize publication or provisioning a paid signing identity.
+Signing and SmartScreen reputation are separate from UAC. Use current authoritative guidance for new trust recommendations; never promise warning-free launches. Velopack must sign Setup, app and updater when a configured identity exists. `-RequireSigning` prevents silent unsigned fallback. Current unsigned previews must say so; user-authorized unsigned publication is permitted by the existing release policy.
+
+Use build/test for repairs and checks, publish for release authorization and verification. Packaging does not authorize buying a signing identity or publishing unless the user requested it.

@@ -1,8 +1,9 @@
-"""Project bounded Sora 2 probe observations into partial live encounters.
+"""Project bounded Sora 2 probe observations into partial event-ledger encounters.
 
 The probe JSONL remains the raw record. This bridge writes one atomic encounter
-snapshot per battle for the existing WPF history watcher. Unknown data stays
-unknown; this is deliberately not a complete action log.
+snapshot per battle for the existing WPF history watcher. Callback observations,
+resource writes, and unknown property writes remain distinct; this is not yet a
+complete command/action stream.
 """
 
 import argparse
@@ -23,9 +24,20 @@ from status_name_index import read_rows
 
 
 PARTY_NAMES = {0: "Estelle", 2: "Scherazard", 5: "Agate", 6: "Tita"}
-PARTIAL_ISSUE = "Live partial capture: some move names, misses, support actions, status changes, and effect paths are not captured."
+PARTIAL_ISSUE = ("Live partial capture: command selection/execution, some non-damaging effect paths, interrupts, "
+                 "status outcomes, and some passive-effect sources are not identified yet.")
 CLASS_PROVENANCE = "exact-result-flag/player-controlled-live-comparison"
 TABLE_CLASS_PROVENANCE = "live-effect-descriptor/effect-code/player-controlled-comparison"
+EXPECTED_GAME_SHA256 = "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"
+NUMERIC_EFFECT_RVA = 0xE1A67
+RESOURCE_LAYOUTS = {
+    7: ("HP", "set", 0x0C, 0x10),
+    8: ("HP", "add", 0x0C, 0x10),
+    9: ("EP", "set", 0x14, 0x18),
+    10: ("EP", "add", 0x14, 0x18),
+    11: ("CP", "set", 0x1C, 0x20),
+    12: ("CP", "add", 0x1C, 0x20),
+}
 
 
 def damage_class_for_flags(flags):
@@ -147,13 +159,172 @@ def lookup_live_move(attack, skill_rows_by_id):
     return lookup_live_move_with_reason(attack, skill_rows_by_id)[0]
 
 
+def resource_skill_caller_rva(record, module_base):
+    caller_rva = record.get("caller_return_rva")
+    if isinstance(caller_rva, str):
+        return caller_rva.lower()
+    caller = record.get("caller_return")
+    try:
+        return hex(int(caller, 0) - module_base) if (
+            isinstance(caller, str) and module_base is not None) else None
+    except ValueError:
+        return None
+
+
+def observed_resource_skill_key(record, r14_context_snapshots, module_base, path_verified):
+    if (not path_verified or record.get("property_code") not in (11, 12) or
+            resource_skill_caller_rva(record, module_base) != "0xe1fad"):
+        return None
+    raw = record.get("skill_row_0xb0_candidate")
+    try:
+        row_bytes = bytes.fromhex(raw) if isinstance(raw, str) else b""
+    except ValueError:
+        row_bytes = b""
+    provenance = "live-resource-setter-R14"
+    if len(row_bytes) < 4:
+        return None
+    packed_id = struct.unpack_from("<I", row_bytes, 0)[0]
+    return {"id": f"0x{packed_id:08X}",
+            "rawParam30": struct.unpack_from("<I", row_bytes, 0x30)[0]
+            if len(row_bytes) >= 0x34 else None,
+            "provenance": provenance}
+
+
+def lookup_resource_skill_with_reason(record, skill_rows_by_id,
+                                      r14_context_snapshots=None, module_base=None,
+                                      path_verified=False):
+    """Resolve the exact CP support row observed at its verified setter caller."""
+    if not path_verified:
+        return None, "resource-setter-path-unverified"
+    if record.get("property_code") not in (11, 12):
+        return None, "resource-skill-path-unverified"
+    caller_rva = resource_skill_caller_rva(record, module_base)
+    if not isinstance(caller_rva, str) or caller_rva.lower() != "0xe1fad":
+        return None, "resource-skill-caller-unverified"
+    packed_id = record.get("skill_row_packed_id_candidate")
+    raw = record.get("skill_row_0xb0_candidate")
+    try:
+        row_bytes = bytes.fromhex(raw) if isinstance(raw, str) else b""
+    except ValueError:
+        row_bytes = b""
+    provenance = "live-resource-setter-R14/exact-English-t_skill"
+    if len(row_bytes) < 0x34:
+        return None, "resource-skill-row-bytes-missing"
+    row_packed_id = struct.unpack_from("<I", row_bytes, 0)[0]
+    if isinstance(packed_id, int) and packed_id != row_packed_id:
+        return None, "skill-packed-id-mismatch"
+    packed_id = row_packed_id
+    if not skill_rows_by_id:
+        return None, "skill-table-unavailable"
+    candidates = skill_rows_by_id.get(packed_id, ())
+    if not candidates:
+        return None, "skill-id-absent"
+    matches = [row for row in candidates if all(
+        struct.unpack_from("<I", row_bytes, offset)[0] == row[f"rawParam{offset:02x}"]
+        for offset in (0x10, 0x20, 0x30))]
+    if len(matches) != 1:
+        return None, "resource-skill-row-ambiguous" if matches else "resource-skill-parameters-mismatch"
+    row = matches[0]
+    if not row.get("name"):
+        return None, "skill-name-missing"
+    return ({"id": f"0x{packed_id:08X}", "name": row["name"],
+             "rawParam30": row["rawParam30"],
+             "provenance": provenance}, None)
+
+
+def lookup_numeric_effect_skill_with_reason(record, skill_rows_by_id, path_verified,
+                                            r14_context_snapshots=None):
+    """Resolve only the R14 row from the controlled NumericEffectCall site."""
+    if not path_verified:
+        return None, "numeric-effect-callsite-unverified"
+    packed_id = record.get("skill_row_packed_id_candidate")
+    raw = record.get("skill_row_0xb0_candidate")
+    try:
+        row_bytes = bytes.fromhex(raw) if isinstance(raw, str) else b""
+    except ValueError:
+        row_bytes = b""
+    provenance = "live-NumericEffectCall-R14/exact-English-t_skill"
+    if len(row_bytes) < 0x34:
+        return None, "numeric-effect-skill-row-bytes-missing"
+    row_packed_id = struct.unpack_from("<I", row_bytes, 0)[0]
+    if isinstance(packed_id, int) and packed_id != row_packed_id:
+        return None, "skill-packed-id-mismatch"
+    packed_id = row_packed_id
+    if not skill_rows_by_id:
+        return None, "skill-table-unavailable"
+    candidates = skill_rows_by_id.get(packed_id, ())
+    if not candidates:
+        return None, "skill-id-absent"
+    matches = [row for row in candidates if all(
+        struct.unpack_from("<I", row_bytes, offset)[0] == row[f"rawParam{offset:02x}"]
+        for offset in (0x10, 0x20, 0x30))]
+    source_id = record.get("source_actor_id")
+    if isinstance(source_id, int) and 0 <= source_id < 1000:
+        matches = [row for row in matches if row["ownerId"] in (source_id, 65535)]
+        if not matches:
+            return None, "numeric-effect-skill-owner-mismatch"
+    if len(matches) != 1:
+        return None, "numeric-effect-skill-row-ambiguous" if matches else "numeric-effect-skill-parameters-mismatch"
+    row = matches[0]
+    if not row.get("name"):
+        return None, "skill-name-missing"
+    return ({"id": f"0x{packed_id:08X}", "name": row["name"],
+             "rawParam30": row["rawParam30"],
+             "provenance": provenance}, None)
+
+
+def read_r14_context_snapshots(paths):
+    """Index exact-build read-only context snapshots by the captured address."""
+    snapshots = {}
+    ambiguous = set()
+    for path in paths:
+        has_expected_executable = False
+        records = []
+        with Path(path).open("r", encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                records.append(record)
+                if (record.get("kind") == "executable" and
+                        record.get("sha256") == EXPECTED_GAME_SHA256):
+                    has_expected_executable = True
+        if not has_expected_executable:
+            raise ValueError(f"Context snapshot is not from the supported executable: {path}")
+        for record in records:
+            if record.get("kind") != "context":
+                continue
+            address = record.get("address")
+            raw = record.get("bytes_600")
+            if not isinstance(address, str) or not isinstance(raw, str):
+                continue
+            try:
+                row_bytes = bytes.fromhex(raw)[:0xB0]
+            except ValueError:
+                continue
+            if len(row_bytes) < 0x34:
+                continue
+            key = address.lower()
+            previous = snapshots.get(key)
+            if previous is not None and previous != row_bytes:
+                snapshots.pop(key, None)
+                ambiguous.add(key)
+            elif key not in ambiguous:
+                snapshots[key] = row_bytes
+    return snapshots
+
+
 class LiveBridge:
     def __init__(self, store_dir, raw_trace_name, table_rows=None, name_rows=None,
-                 skill_rows=None, enemy_ai_index=None, reset_path=None):
+                 skill_rows=None, enemy_ai_index=None, reset_path=None,
+                 recover_first_attack=False, r14_context_snapshots=None,
+                 player_confirmed_outcome=None, recover_first_resource=False):
         self.store_dir = Path(store_dir)
         self.raw_trace_name = raw_trace_name
         self.encounter_index = 0
         self.current = None
+        self.current_label_prefix = "Command battle"
         self.pending = {}
         self.changed = 0
         self.table_rows = table_rows or []
@@ -163,6 +334,17 @@ class LiveBridge:
         self.skill_lookup = rows_by_packed_id(skill_rows) if skill_rows is not None else {}
         self.enemy_ai_index = enemy_ai_index
         self.reset_path = Path(reset_path) if reset_path is not None else None
+        self.recover_first_attack = recover_first_attack
+        self.recover_first_resource = recover_first_resource
+        self.executable_sha256 = None
+        self.module_base = None
+        self.module_breakpoints = {}
+        self.has_battle_end_hook = None
+        self.r14_context_snapshots = r14_context_snapshots or {}
+        self.player_confirmed_outcome = player_confirmed_outcome
+        self.pending_numeric_effects = []
+        self.last_save_event_count = 0
+        self.last_save_monotonic = 0.0
         self.reset_window_at = None
         self.reset_actors = set()
         self.last_reset_at = None
@@ -251,7 +433,7 @@ class LiveBridge:
                 name, provenance, unit_id = f"Party ID {numeric_id}", "unresolved", None
                 self.issue("Unverified party ID; displayed as a numeric actor.")
             team = "Party"
-        elif isinstance(numeric_id, int) and numeric_id >= 60000:
+        elif isinstance(numeric_id, int) and 60000 <= numeric_id < 65535:
             count = 1 + sum(actor["team"] == "Enemy" for actor in actors)
             match = self.enemy_names.get(pointer)
             if match and match["numericId"] != numeric_id:
@@ -389,9 +571,21 @@ class LiveBridge:
                     time.sleep(0.025 * (attempt + 1))
         finally:
             temporary.unlink(missing_ok=True)
+        self.last_save_event_count = len(self.current["events"])
+        self.last_save_monotonic = time.monotonic()
         self.changed += 1
 
-    def start(self, record, issue=None):
+    def save_if_due(self):
+        if self.current is None:
+            return
+        event_count = len(self.current["events"])
+        if event_count == self.last_save_event_count:
+            return
+        if (event_count - self.last_save_event_count >= 32 or
+                time.monotonic() - self.last_save_monotonic >= 1.0):
+            self.save()
+
+    def start(self, record, issue=None, label_prefix="Command battle"):
         if self.current is not None:
             if self.pending_wipe is not None:
                 self.issue("A full-party knockout preceded the next battle entry; defeat is inferred.")
@@ -404,6 +598,7 @@ class LiveBridge:
                 self.current["label"] += " · interrupted"
             self.save()
         self.pending.clear()
+        self.pending_numeric_effects.clear()
         self.knocked_out_party.clear()
         self.pending_wipe = None
         self.observed_party_hp.clear()
@@ -412,17 +607,21 @@ class LiveBridge:
         self.enemy_names.clear()
         self.enemy_lookup.clear()
         stamp = record["at"]
+        self.current_label_prefix = label_prefix
         self.encounter_index += 1
         stable_id = uuid.uuid5(uuid.NAMESPACE_URL,
                                f"sora2-details:{self.raw_trace_name}:{self.encounter_index}")
         self.current = {
+            "schemaVersion": 2,
             "id": "live-" + stable_id.hex,
-            "label": f"Command battle {datetime.fromisoformat(stamp):%H:%M:%S} · in progress",
+            "label": f"{label_prefix} {datetime.fromisoformat(stamp):%H:%M:%S} · in progress",
             "startedAt": stamp,
             "outcome": "InProgress",
             "isComplete": False,
             "actors": [], "events": [],
             "issues": [PARTIAL_ISSUE, f"Raw trace: {self.raw_trace_name}"] +
+                      (["Cross-trace memory snapshots are candidate research evidence; labels require inline row bytes."]
+                       if self.r14_context_snapshots else []) +
                       ([issue] if issue else []),
         }
         self.save()
@@ -433,24 +632,54 @@ class LiveBridge:
         if self.pending:
             self.issue(f"{len(self.pending)} attack call(s) had no paired HP write at battle end.")
             self.pending.clear()
-        self.issue("BattleEnd callback observed; victory, Escape, and defeat are not yet decoded.")
-        self.current["outcome"] = "Unknown"
-        self.current["label"] = (
-            f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · result unknown")
+        self.finish_outcome("BattleEnd callback observed; its raw result code is not decoded.")
         self.save()
         self.current = None
+        self.pending_numeric_effects.clear()
         self.last_end_at = datetime.fromisoformat(record["at"])
+
+    def finish_outcome(self, reason):
+        if self.player_confirmed_outcome in ("Victory", "Escape", "Defeat"):
+            outcome = self.player_confirmed_outcome
+            self.issue(f"{outcome} outcome supplied by the player; raw BattleEnd result remains undecoded.")
+            self.current["outcome"] = outcome
+            self.current["label"] = (
+                f"{self.current_label_prefix} {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} "
+                f"· {outcome.lower()} (player-confirmed)")
+            self.player_confirmed_outcome = None
+            return
+        self.issue(reason)
+        if self.has_battle_end_hook is False:
+            self.issue("This capture did not watch BattleEnd; battle outcome remains unknown.")
+        elif not reason.startswith("BattleEnd callback"):
+            self.current["outcome"] = "Interrupted"
+            self.current["label"] = (
+                f"{self.current_label_prefix} {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · interrupted")
+            return
+        self.current["outcome"] = "Unknown"
+        self.current["label"] = (
+            f"{self.current_label_prefix} {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · result unknown")
 
     def interrupt(self, reason):
         if self.current is None:
             return
-        self.issue(reason)
-        self.current["outcome"] = "Interrupted"
-        self.current["label"] = (
-            f"Command battle {datetime.fromisoformat(self.current['startedAt']):%H:%M:%S} · interrupted")
+        self.finish_outcome(reason)
         self.save()
         self.current = None
         self.pending.clear()
+        self.pending_numeric_effects.clear()
+
+    def numeric_effect_path_verified(self):
+        if self.executable_sha256 != EXPECTED_GAME_SHA256 or self.module_base is None:
+            return False
+        address = self.module_breakpoints.get("NumericEffectCall")
+        return isinstance(address, int) and address - self.module_base == NUMERIC_EFFECT_RVA
+
+    def resource_setter_path_verified(self):
+        if self.executable_sha256 != EXPECTED_GAME_SHA256 or self.module_base is None:
+            return False
+        address = self.module_breakpoints.get("ResourceSetEntry")
+        return isinstance(address, int) and address - self.module_base == 0xF8DB0
 
     def infer_retry(self, record, evidence):
         self.issue(f"Full-party knockout followed by {evidence}; Retry boundary inferred. Result and exact entry time remain unverified.")
@@ -556,7 +785,8 @@ class LiveBridge:
     def add_effect(self, record, kind, source, target, amount, before, after,
                    resolved=None, move=None, move_name=None, raw_result_flags=None,
                    raw_effect=None, raw_source_context_flags=None,
-                   raw_target_status_7c=None, move_lookup_reason=None):
+                   raw_target_status_7c=None, move_lookup_reason=None,
+                   action_id=None, resource_details=None, candidate_amount=None):
         if self.current is None or target is None:
             return
         events = self.current["events"]
@@ -569,7 +799,7 @@ class LiveBridge:
         events.append({
             "sequence": len(events) + 1,
             "observedAt": record["at"],
-            "actionId": None,
+            "actionId": action_id,
             "sourceId": source,
             "targetId": target,
             "moveId": move["id"] if move else None,
@@ -581,6 +811,7 @@ class LiveBridge:
             "rawEffectCode": raw_effect["rawParam30"] if raw_effect else None,
             "kind": kind,
             "effectiveAmount": amount,
+            "candidateAmount": candidate_amount,
             "hpBefore": before,
             "hpAfter": after,
             "damageClass": damage_class,
@@ -591,12 +822,14 @@ class LiveBridge:
             "rawSourceContextFlags": raw_source_context_flags,
             "rawTargetStatus7C": raw_target_status_7c,
         })
+        if resource_details:
+            events[-1].update(resource_details)
         if kind in ("Damage", "HpLoss") and before is not None and before > 0 and after == 0:
             actor = next(actor for actor in self.current["actors"] if actor["id"] == target)
             if actor["team"] == "Party":
                 events.append({
                     "sequence": len(events) + 1,
-                    "observedAt": record["at"], "actionId": None,
+                    "observedAt": record["at"], "actionId": action_id,
                     "sourceId": source, "targetId": target,
                     "moveId": move["id"] if move else None,
                     "moveName": move["name"] if move else None,
@@ -613,27 +846,301 @@ class LiveBridge:
                     "rawTargetStatus7C": raw_target_status_7c,
                     "damageClassProvenance": provenance,
                 })
-        self.save()
+        self.save_if_due()
 
     def hp_write(self, record):
+        """Compatibility entry point for saved traces using the older HP-only hook."""
+        self.resource_write(record)
+
+    def observe_attack_action(self, record):
+        """Keep an explicit event for each observed damaging-effect call, even without a write."""
+        source = self.actor(record.get("source_status_ptr"), record.get("source_actor_id"))
+        target = self.actor(record.get("target_status_ptr"), record.get("target_actor_id"))
+        if target is None:
+            self.issue("Attack-effect call had no target status pointer; action reference omitted.")
+            self.save()
+            return None
+        raw_effect = observed_effect_descriptor(record)
+        move, reason = lookup_live_move_with_reason(record, self.skill_lookup)
+        if (move is None and isinstance(record.get("source_actor_id"), int) and
+                60000 <= record["source_actor_id"] < 65535):
+            move, reason = self.lookup_enemy_move_with_reason(record, raw_effect)
+        action_id = f"{self.current['id']}:event:{len(self.current['events']) + 1}"
+        self.current["events"].append({
+            "sequence": len(self.current["events"]) + 1,
+            "observedAt": record["at"],
+            "actionId": action_id,
+            "eventStage": "attack-effect-call",
+            "sourceId": source,
+            "targetId": target,
+            "moveId": move["id"] if move else None,
+            "moveName": move["name"] if move else None,
+            "moveNameProvenance": move["provenance"] if move else None,
+            "moveLookupReason": reason,
+            "moveRawParam30": move["rawParam30"] if move else None,
+            "rawEffectId": raw_effect["id"] if raw_effect else None,
+            "rawEffectCode": raw_effect["rawParam30"] if raw_effect else None,
+            "candidateAmount": record.get("candidate_resolved_amount"),
+            "kind": "ActionObserved",
+            "effectiveAmount": None,
+            "hpBefore": None,
+            "hpAfter": None,
+            "damageClass": "Unknown",
+            "rawResultFlags": record.get("candidate_result_flags"),
+            "rawSourceContextFlags": source_context_flags(record),
+            "rawTargetStatus7C": target_status_7c(record),
+        })
+        self.save_if_due()
+        return action_id
+
+    def observe_numeric_action(self, record):
+        source = self.actor(record.get("source_status_ptr"), record.get("source_actor_id"))
+        target = self.actor(record.get("target_status_ptr"), record.get("target_actor_id"))
+        if target is None:
+            self.issue("Numeric effect call had no target status pointer; action reference omitted.")
+            self.save()
+            return None
+        move, reason = lookup_numeric_effect_skill_with_reason(
+            record, self.skill_lookup, self.numeric_effect_path_verified(),
+            self.r14_context_snapshots)
+        if move and move["provenance"].startswith("cross-trace-"):
+            self.issue("Numeric effect skill name uses a separate exact-build memory snapshot at the same R14 pointer.")
+        packed_id = record.get("skill_row_packed_id_candidate")
+        row_bytes = b""
+        try:
+            raw_row = record.get("skill_row_0xb0_candidate")
+            row_bytes = bytes.fromhex(raw_row) if isinstance(raw_row, str) else b""
+        except ValueError:
+            pass
+        if not isinstance(packed_id, int) and len(row_bytes) >= 4:
+            packed_id = struct.unpack_from("<I", row_bytes, 0)[0]
+        raw_effect_id = move["id"] if move else (
+            f"0x{packed_id:08X}" if isinstance(packed_id, int) else None)
+        raw_effect_code = move["rawParam30"] if move else None
+        if raw_effect_code is None:
+            if len(row_bytes) >= 0x34:
+                raw_effect_code = struct.unpack_from("<I", row_bytes, 0x30)[0]
+        action_id = f"{self.current['id']}:event:{len(self.current['events']) + 1}"
+        candidate_amount = record.get("result_entry_amount")
+        candidate_amount = candidate_amount if isinstance(candidate_amount, int) else None
+        self.current["events"].append({
+            "sequence": len(self.current["events"]) + 1,
+            "observedAt": record["at"],
+            "actionId": action_id,
+            "eventStage": "numeric-effect-call",
+            "sourceId": source,
+            "targetId": target,
+            "moveId": move["id"] if move else raw_effect_id,
+            "moveName": move["name"] if move else None,
+            "moveNameProvenance": move["provenance"] if move else None,
+            "moveLookupReason": reason,
+            "moveRawParam30": move["rawParam30"] if move else raw_effect_code,
+            "rawEffectId": raw_effect_id,
+            "rawEffectCode": raw_effect_code,
+            "candidateAmount": candidate_amount,
+            "kind": "ActionObserved",
+            "effectiveAmount": None,
+            "hpBefore": None,
+            "hpAfter": None,
+            "damageClass": "Unknown",
+            "rawResultFlags": None,
+        })
+        self.pending_numeric_effects.append({
+            "at": datetime.fromisoformat(record["at"]),
+            "tid": record.get("tid"),
+            "target_status_ptr": record.get("target_status_ptr"),
+            "source_status_ptr": record.get("source_status_ptr"),
+            "source_actor_id": record.get("source_actor_id"),
+            "target_actor_id": record.get("target_actor_id"),
+            "action_id": action_id,
+            "move": move,
+            "move_lookup_reason": reason,
+            "raw_effect_id": raw_effect_id,
+            "raw_effect_code": raw_effect_code,
+            "candidate_amount": candidate_amount,
+        })
+        self.save_if_due()
+        return action_id
+
+    def match_numeric_effect(self, record, target_pointer):
+        # Temporal proximity is insufficient: require the exact application
+        # path and the uncapped request to agree with the numeric result.
+        if (not self.numeric_effect_path_verified() or
+                not self.resource_setter_path_verified() or
+                resource_skill_caller_rva(record, self.module_base) != "0xe4db1"):
+            return None
+        values = self.decode_resource(record)
+        if not values or not values["valid"]:
+            return None
+        observed_at = datetime.fromisoformat(record["at"])
+        recent = []
+        matches = []
+        for pending in self.pending_numeric_effects:
+            age = (observed_at - pending["at"]).total_seconds()
+            if age < 0 or age > 0.5:
+                continue
+            recent.append(pending)
+            if (pending["tid"] == record.get("tid") and
+                    pending["target_status_ptr"] == target_pointer and
+                    pending["candidate_amount"] == values["requested_delta"]):
+                matches.append(pending)
+        self.pending_numeric_effects = recent
+        if len(matches) != 1:
+            if len(matches) > 1:
+                self.issue("Multiple numeric effect calls matched one HP write; healing source remains unknown.")
+                self.save_if_due()
+            return None
+        self.pending_numeric_effects.remove(matches[0])
+        return matches[0]
+
+    @staticmethod
+    def decode_resource(record):
+        """Normalize new shared-setter and older HP-hook records."""
+        if record.get("name") == "HpSet":
+            resource, operation = "HP", "set"
+            before = record.get("hp_before")
+            maximum = record.get("hp_max")
+            requested = record.get("requested_hp")
+            property_code = 7
+        else:
+            property_code = record.get("property_code")
+            layout = RESOURCE_LAYOUTS.get(property_code)
+            if layout is None:
+                return None
+            resource, operation, _, _ = layout
+            before = record.get("value_before")
+            maximum = record.get("maximum_before")
+            requested = record.get("requested_value")
+        if not all(isinstance(value, int) for value in (before, maximum, requested)) or maximum <= 0:
+            return {"resource": resource, "operation": operation,
+                    "property_code": property_code, "before": before,
+                    "maximum": maximum, "requested": requested,
+                    "candidate_after": None, "candidate_delta": None,
+                    "valid": False}
+        requested_after = requested if operation == "set" else before + requested
+        requested_delta = requested_after - before
+        candidate_after = max(0, min(maximum, requested_after))
+        return {"resource": resource, "operation": operation,
+                "property_code": property_code, "before": before,
+                "maximum": maximum, "requested": requested,
+                "requested_delta": requested_delta,
+                "candidate_after": candidate_after,
+                "candidate_delta": candidate_after - before,
+                "valid": True}
+
+    def append_state_write(self, record, target):
+        property_code = record.get("property_code")
+        requested = record.get("requested_value")
+        events = self.current["events"]
+        events.append({
+            "sequence": len(events) + 1,
+            "observedAt": record["at"],
+            "actionId": None,
+            "eventStage": "property-setter-entry",
+            "sourceId": None,
+            "targetId": target,
+            "moveId": None,
+            "moveName": f"Unresolved property {property_code}",
+            "moveNameProvenance": None,
+            "moveLookupReason": "property-code-unresolved",
+            "rawEffectId": None,
+            "rawEffectCode": None,
+            "kind": "StateWriteObserved",
+            "effectiveAmount": None,
+            "hpBefore": None,
+            "hpAfter": None,
+            "damageClass": "Unknown",
+            "rawPropertyCode": property_code,
+            "rawPropertyRequestedValue": requested,
+            "resourceSetterCallerRva": record.get("caller_return_rva"),
+        })
+        self.save_if_due()
+
+    def resource_write(self, record):
         if self.current is None:
+            decoded = self.decode_resource(record)
+            if decoded and decoded["resource"] == "HP":
+                outside_record = dict(record, hp_before=decoded["before"],
+                                      hp_max=decoded["maximum"],
+                                      requested_hp=decoded["candidate_after"])
+                self.observe_outside_battle_hp(outside_record)
+            return
+
+        if (record.get("name") == "ResourceSetEntry" and
+                record.get("property_code") not in RESOURCE_LAYOUTS):
+            target = self.actor(record.get("status_ptr"), record.get("status_actor_id"))
+            if target is not None:
+                self.append_state_write(record, target)
+            return
+
+        values = self.decode_resource(record)
+        if values is None:
             return
         pointer = record.get("status_ptr")
-        before, maximum, requested = (record.get(key) for key in
-                                      ("hp_before", "hp_max", "requested_hp"))
-        if not pointer or not all(isinstance(value, int) for value in
-                                  (before, maximum, requested)) or maximum <= 0:
-            self.issue("Unreadable HP setter observation.")
+        if not pointer or not values["valid"]:
+            self.issue(f"Unreadable {values['resource']} setter observation.")
             self.save()
             return
-        after = max(0, min(maximum, requested))
+        before = values["before"]
+        maximum = values["maximum"]
+        after = values["candidate_after"]
+        candidate_delta = values["candidate_delta"]
         target = self.actor(pointer, record.get("status_actor_id"))
+        resource_details = {
+            "eventStage": "resource-setter-entry",
+            "resource": values["resource"],
+            "resourceOperation": values["operation"],
+            "resourceBefore": before,
+            "resourceCandidateAfter": after,
+            "resourceMaximum": maximum,
+            "requestedResourceValue": values["requested"],
+            "resourceCandidateDelta": candidate_delta,
+            "resourceCandidateProvenance": "setter-operation/pre-write-value/clamped-to-maximum",
+            "resourceSetterCallerRva": record.get("caller_return_rva"),
+        }
+
+        if values["resource"] != "HP":
+            skill, reason = lookup_resource_skill_with_reason(
+                record, self.skill_lookup, self.r14_context_snapshots, self.module_base,
+                self.resource_setter_path_verified())
+            raw_effect = ({"id": skill["id"], "rawParam30": skill["rawParam30"]}
+                          if skill else observed_resource_skill_key(
+                              record, self.r14_context_snapshots, self.module_base,
+                              self.resource_setter_path_verified()))
+            if skill and skill["provenance"].startswith("cross-trace-"):
+                self.issue("Resource skill name uses a separate exact-build memory snapshot at the same R14 pointer.")
+            elif (not skill and raw_effect and
+                  raw_effect.get("provenance", "").startswith("cross-trace-")):
+                self.issue("Raw resource effect key uses a separate exact-build memory snapshot at the same R14 pointer.")
+            self.add_effect(record, "ResourceChange", None, target, None, None, None,
+                            move=skill, raw_effect=raw_effect,
+                            move_lookup_reason=reason, resource_details=resource_details)
+            return
+
+        hp_record = dict(record, hp_before=before, hp_max=maximum,
+                         requested_hp=after)
+        if self.observe_party_hp(hp_record):
+            if before == maximum:
+                return
         attack = self.pending.get(record.get("tid"))
-        if attack is not None and attack.get("target_status_ptr") == pointer and after <= before:
+        attack_age = ((datetime.fromisoformat(record["at"]) -
+                       datetime.fromisoformat(attack["at"])).total_seconds()
+                      if attack is not None else None)
+        attack_amount = attack.get("candidate_resolved_amount") if attack else None
+        attack_request_matches = (isinstance(attack_amount, int) and attack_amount >= 0 and
+            (attack_amount == -values["requested_delta"] or
+             values["operation"] == "set" and values["requested"] < 0 and
+             attack_amount >= before))
+        if (attack is not None and attack.get("target_status_ptr") == pointer and
+                after <= before and attack_age is not None and 0 <= attack_age <= 0.5 and
+                attack_request_matches):
             self.pending.pop(record.get("tid"), None)
             source = self.actor(attack.get("source_status_ptr"), attack.get("source_actor_id"))
             amount = attack.get("candidate_resolved_amount")
-            if not isinstance(amount, int) or amount < 0 or requested >= 0 and amount != before - requested:
+            lethal_set_sentinel = (values["operation"] == "set" and
+                                   values["requested"] < 0)
+            if (not isinstance(amount, int) or amount < 0 or
+                    not lethal_set_sentinel and amount != -values["requested_delta"]):
                 self.issue("Attack amount and HP request disagreed; resolved amount left unknown.")
                 amount = None
             kind = "Damage" if before > after or amount else "Unknown"
@@ -641,50 +1148,102 @@ class LiveBridge:
             move, move_lookup_reason = lookup_live_move_with_reason(attack, self.skill_lookup)
             if move is None:
                 source_id = attack.get("source_actor_id")
-                if isinstance(source_id, int) and source_id >= 60000:
+                if isinstance(source_id, int) and 60000 <= source_id < 65535:
                     move, move_lookup_reason = self.lookup_enemy_move_with_reason(attack, raw_effect)
-            self.add_effect(record, kind, source, target,
+            action_id = attack.get("_action_id")
+            self.add_effect(hp_record, kind, source, target,
                             before - after if kind == "Damage" else None,
                             before, after, resolved=amount, move=move,
                             raw_effect=raw_effect,
                             raw_result_flags=attack.get("candidate_result_flags"),
                             raw_source_context_flags=source_context_flags(attack),
                             raw_target_status_7c=target_status_7c(attack),
-                            move_lookup_reason=move_lookup_reason)
+                            move_lookup_reason=move_lookup_reason,
+                            action_id=action_id, resource_details=resource_details)
+            return
+        numeric = self.match_numeric_effect(record, pointer) if after > before else None
+        if numeric is not None:
+            source = self.actor(numeric["source_status_ptr"], numeric["source_actor_id"])
+            raw_effect = ({"id": numeric["raw_effect_id"],
+                           "rawParam30": numeric["raw_effect_code"]}
+                          if numeric["raw_effect_id"] else None)
+            self.add_effect(
+                hp_record, "Healing", source, target, after - before, before, after,
+                move=numeric["move"], raw_effect=raw_effect,
+                move_lookup_reason=numeric["move_lookup_reason"],
+                action_id=numeric["action_id"], resource_details=resource_details,
+                candidate_amount=numeric["candidate_amount"])
             return
         if attack is not None:
             self.issue("An unrelated HP write occurred while an attack result was pending; the attack remains pending.")
         self.issue("An HP write had no verified source or move.")
         kind = "Healing" if after > before else "HpLoss" if after < before else "Unknown"
         amount = abs(after - before) if kind != "Unknown" else None
-        self.add_effect(record, kind, None, target, amount, before, after,
+        self.add_effect(hp_record, kind, None, target, amount, before, after,
                         move_name="Unattributed HP write",
-                        move_lookup_reason="hp-write-without-attack-result")
+                        move_lookup_reason="hp-write-without-attack-result",
+                        resource_details=resource_details,
+                        candidate_amount=(values["requested_delta"]
+                                          if kind == "Healing" and values["requested_delta"] > 0
+                                          else None))
 
     def handle(self, record):
+        if record.get("kind") == "executable":
+            self.executable_sha256 = record.get("sha256")
+            return
+        if record.get("kind") == "module":
+            try:
+                self.module_base = int(record.get("base"), 0)
+                self.module_breakpoints = {
+                    name: int(address, 0)
+                    for name, address in record.get("breakpoints", {}).items()
+                }
+                self.has_battle_end_hook = "BattleEnd" in self.module_breakpoints
+            except (TypeError, ValueError):
+                self.module_base = None
+                self.module_breakpoints = {}
+                self.has_battle_end_hook = None
+            return
         if record.get("kind") == "hit":
             name = record.get("name")
             if name == "BattleInit":
                 self.start(record)
+            elif name == "BattleCommandBegin" and self.current is None:
+                self.start(record, "Capture began at the first observed command callback; "
+                           "battle entry and earlier actions or effects may be missing.")
             elif name == "BattleEnd":
                 self.end(record)
-            elif name == "AttackEffectCall" and self.current is not None:
+            elif name == "NumericEffectCall":
+                if self.current is None:
+                    self.start(record, "Capture began at the first observed numeric-effect callback; "
+                               "battle entry and earlier actions or effects may be missing.",
+                               label_prefix="Observed event window")
+                self.observe_numeric_action(record)
+            elif name == "AttackEffectCall":
+                if self.current is None and (
+                        self.recover_first_attack or self.numeric_effect_path_verified()):
+                    issue = ("Recovered from a mid-battle trace at its first observed attack-effect "
+                             "callback; earlier actions and entry state are missing."
+                             if self.recover_first_attack else
+                             "Capture began at the first observed attack-effect callback; "
+                             "battle entry and earlier actions or effects may be missing.")
+                    self.start(record, issue, label_prefix="Observed event window")
+                if self.current is None:
+                    return
                 self.observe_retry_attack(record)
                 self.observe_identity(record)
                 tid = record.get("tid")
                 if tid in self.pending:
                     self.issue("An attack call was overwritten before an HP write.")
                     self.save()
+                record["_action_id"] = self.observe_attack_action(record)
                 self.pending[tid] = record
-            elif name == "HpSet":
-                if self.current is None:
-                    self.observe_outside_battle_hp(record)
-                else:
-                    if self.observe_party_hp(record):
-                        # The direct restoration happened outside this hook.
-                        if record.get("hp_before") == record.get("hp_max"):
-                            return
-                    self.hp_write(record)
+            elif name in ("HpSet", "ResourceSetEntry"):
+                if self.current is None and self.recover_first_resource and name == "ResourceSetEntry":
+                    self.start(record, "Recovered from a trace at its first resource-setter callback; "
+                               "battle entry and earlier actions or effects may be missing.",
+                               label_prefix="Observed event window")
+                self.resource_write(record)
         elif record.get("kind") == "hit_limit":
             self.issue("Probe hit limit reached; capture may have dropped later results.")
             self.save()
@@ -693,11 +1252,20 @@ class LiveBridge:
 
 
 def consume(trace_path, store_dir, follow=False, max_wait_seconds=3600,
-            table_rows=None, name_rows=None, skill_rows=None, enemy_ai_index=None):
+            table_rows=None, name_rows=None, skill_rows=None, enemy_ai_index=None,
+            recover_first_attack=False, r14_context_snapshots=None,
+            player_confirmed_outcome=None, recover_first_resource=False):
+    if follow and (recover_first_attack or recover_first_resource or
+                   r14_context_snapshots or player_confirmed_outcome):
+        raise ValueError("Recovery, annotations, and cross-trace skill snapshots are offline-only.")
     trace_path = Path(trace_path)
     bridge = LiveBridge(store_dir, trace_path.name, table_rows, name_rows,
                         skill_rows, enemy_ai_index,
-                        reset_path=trace_path.with_suffix(".reset.json"))
+                        reset_path=trace_path.with_suffix(".reset.json"),
+                        recover_first_attack=recover_first_attack,
+                        r14_context_snapshots=r14_context_snapshots,
+                        player_confirmed_outcome=player_confirmed_outcome,
+                        recover_first_resource=recover_first_resource)
     deadline = time.monotonic() + max_wait_seconds
     while not trace_path.exists():
         if not follow or time.monotonic() >= deadline:
@@ -705,7 +1273,16 @@ def consume(trace_path, store_dir, follow=False, max_wait_seconds=3600,
         time.sleep(0.1)
     with trace_path.open("r", encoding="utf-8") as stream:
         while True:
+            position = stream.tell()
             line = stream.readline()
+            if follow and line and not line.endswith("\n"):
+                stream.seek(position)
+                if time.monotonic() >= deadline:
+                    bridge.interrupt("Live bridge timed out with an incomplete raw record.")
+                    break
+                bridge.save_if_due()
+                time.sleep(0.05)
+                continue
             if line:
                 try:
                     record = json.loads(line)
@@ -721,6 +1298,7 @@ def consume(trace_path, store_dir, follow=False, max_wait_seconds=3600,
                 bridge.interrupt("Live bridge timed out before probe detach.")
                 break
             else:
+                bridge.save_if_due()
                 time.sleep(0.1)
     if not follow:
         bridge.interrupt("Raw trace ended before probe detach.")
@@ -734,6 +1312,18 @@ def main():
         Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
         / "Sora2 Details" / "encounters"))
     parser.add_argument("--follow", action="store_true")
+    parser.add_argument("--recover-first-attack", action="store_true",
+                        help="offline recovery only: start a partial encounter at the first "
+                             "attack callback when an older trace lacks BattleInit/command callbacks")
+    parser.add_argument("--recover-first-resource", action="store_true",
+                        help="offline recovery only: start a partial encounter at the first resource "
+                             "setter when an older trace lacks battle-entry/command callbacks")
+    parser.add_argument("--r14-context-snapshot", "--numeric-effect-snapshot",
+                        dest="r14_context_snapshot", type=Path, action="append", default=[],
+                        help="offline research only: load context candidates; addresses alone never supply event labels")
+    parser.add_argument("--player-confirmed-outcome", choices=("Victory", "Escape", "Defeat"),
+                        help="offline only: annotate the first recovered encounter with the player's "
+                             "reported result; the raw BattleEnd value remains undecoded")
     parser.add_argument("--table-pac", type=Path,
                         help="Exact English table_en.pac for provisional enemy-name matches")
     parser.add_argument("--script-pac", type=Path,
@@ -744,9 +1334,11 @@ def main():
     name_rows = read_name_rows(args.table_pac) if args.table_pac else None
     skill_rows = read_skill_rows(args.table_pac) if args.table_pac else None
     enemy_ai_index = EnemyAiSkillIndex(args.script_pac) if args.script_pac else None
+    r14_context_snapshots = read_r14_context_snapshots(args.r14_context_snapshot)
     result = consume(args.trace, args.store_dir, args.follow,
                      args.max_wait_seconds, table_rows, name_rows, skill_rows,
-                     enemy_ai_index)
+                     enemy_ai_index, args.recover_first_attack, r14_context_snapshots,
+                     args.player_confirmed_outcome, args.recover_first_resource)
     print(f"Saved {result.changed} encounter snapshot(s) to {args.store_dir}")
 
 

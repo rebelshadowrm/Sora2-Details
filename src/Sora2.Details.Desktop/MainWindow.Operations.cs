@@ -39,22 +39,32 @@ public partial class MainWindow
     {
         var active = CaptureMayBeActive();
         var traceName = ActiveTraceName();
+        var rawResearchCapture = traceName is not null && IsCurrentHealingResearchCapture() &&
+            !IsCurrentHealingResearchBridgeActive();
+        var transcriptCapture = traceName is not null && IsCurrentTranscriptCapture();
         var missingBridge = active && traceName is null && !_captureStarting;
         var capturing = active && traceName is not null;
+        var startupFailure = CurrentCaptureStartFailure();
         var gameRunning = GetGamePids().Length > 0;
         var state = _researchMode ? "Replay" :
             Environment.GetEnvironmentVariable("SORA2_DETAILS_METER_ONLY") == "1" ? "Meter only" :
-            _captureStatusError is not null || _captureError is not null || missingBridge ? "Error" :
+            _captureStatusError is not null || startupFailure is not null ? "Error" : rawResearchCapture ? "Raw trace" :
+            (!transcriptCapture && _captureError is not null) || missingBridge ? "Error" :
             _captureStopping ? "Stopping capture" : capturing ? "Capturing" :
             _captureStarting || active ? "Starting capture" : gameRunning ? "Ready" : "Waiting for game";
         DataSourceLabel.Text = state;
         DataSourceLabel.Foreground = state == "Error" ? Brushes.OrangeRed :
-            state == "Capturing" ? Brushes.LightGreen : Brushes.Goldenrod;
-        var detail = _captureStatusError ?? _captureError ?? (missingBridge
+            state is "Capturing" or "Raw trace" ? Brushes.LightGreen : Brushes.Goldenrod;
+        var rawTraceDetail = "HealingResearch is recording raw game observations. These rows are not yet projected into the combat meter." +
+            (_captureError is null ? "" : $"\nMeter listener warning: {_captureError}");
+        var detail = _captureStatusError ?? startupFailure ?? (transcriptCapture
+            ? "Recording a partial action stream. Open the recorded action stream from the tray to follow it live. Meter totals do not use this recording."
+            : rawResearchCapture ? rawTraceDetail : _captureError) ?? (missingBridge
             ? "Capture may still be attached. Choose Stop capture from the tray to finish cleanup."
             : state switch
         {
             "Capturing" => "Capturing partial command-battle data. Manage capture from the Sora 2 Details tray menu.",
+            "Raw trace" => rawTraceDetail,
             "Stopping capture" => "Stopping capture and disconnecting from the game.",
             "Starting capture" => "Connecting to the game to begin capture.",
             "Replay" => "Showing a saved replay. Live capture is off.",
@@ -63,13 +73,23 @@ public partial class MainWindow
             _ => "Waiting for Trails in the Sky 2nd Chapter. Saved encounters remain available from the tray."
         });
         DataSourceLabel.ToolTip = $"Sora 2 Details {AppVersion}\n{state}: {detail}\nClick for details.";
+        DataSourceLabel.ToolTip += Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE") == "Transcript"
+            ? "\nMode: Action stream (partial). Recording continues until Stop capture; unknown observations are retained."
+            : Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE") == "HealingResearch"
+            ? "\nMode: Effect research (one battle). BattleEnd is not watched; finish the batch and stop capture."
+            : "\nMode: Live command-battle capture. Some healing and non-damaging effect identities are not watched.";
     }
 
     private void CaptureStatus_Click(object sender, MouseButtonEventArgs e)
     {
-        var detail = _captureStatusError ?? _captureError ?? DataSourceLabel.ToolTip?.ToString();
+        var rawResearchCapture = ActiveTraceName() is not null && IsCurrentHealingResearchCapture() &&
+            !IsCurrentHealingResearchBridgeActive();
+        rawResearchCapture |= IsCurrentTranscriptCapture();
+        var detail = _captureStatusError ?? (rawResearchCapture
+            ? DataSourceLabel.ToolTip?.ToString()
+            : _captureError ?? DataSourceLabel.ToolTip?.ToString());
         MessageBox.Show(this, $"Sora 2 Details {AppVersion}\n\n{detail}", "Capture status",
-            MessageBoxButton.OK, _captureStatusError is not null || _captureError is not null
+            MessageBoxButton.OK, _captureStatusError is not null || (!rawResearchCapture && _captureError is not null)
                 ? MessageBoxImage.Warning : MessageBoxImage.Information);
     }
 
@@ -117,8 +137,11 @@ public partial class MainWindow
             SetCaptureError("The previous capture hasn't finished closing. Choose Stop capture from the tray and try again.");
             return;
         }
+        var transcriptProfile = Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE") == "Transcript";
         var launcher = FindLauncher();
-        if (launcher is null)
+        if (transcriptProfile && launcher is not null)
+            launcher = Path.Combine(Path.GetDirectoryName(launcher)!, "tools", "start_action_stream.ps1");
+        if (launcher is null || !File.Exists(launcher))
         {
             SetCaptureError("Capture could not start because a required file is missing.");
             return;
@@ -183,9 +206,21 @@ public partial class MainWindow
                 WorkingDirectory = Path.GetDirectoryName(launcher)!
             };
             foreach (var argument in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", launcher,
-                         "-CaptureOnly", "-GameDirectory", gameDirectory })
+                         "-GameDirectory", gameDirectory })
                 start.ArgumentList.Add(argument);
-            if (int.TryParse(Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_HOURS"), out var hours) &&
+            if (transcriptProfile)
+            {
+                start.ArgumentList.Add("-TargetPid");
+                start.ArgumentList.Add(targetPid.ToString());
+            }
+            else
+            {
+                start.ArgumentList.Add("-CaptureOnly");
+                start.ArgumentList.Add("-CaptureProfile");
+                start.ArgumentList.Add(Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_PROFILE") == "HealingResearch"
+                    ? "HealingResearch" : "Live");
+            }
+            if (!transcriptProfile && int.TryParse(Environment.GetEnvironmentVariable("SORA2_DETAILS_CAPTURE_HOURS"), out var hours) &&
                 hours is >= 2 and <= 12)
             {
                 start.ArgumentList.Add("-Hours");
@@ -560,7 +595,11 @@ public partial class MainWindow
 
     private static bool ProbeFailedBeforeAttach(string? requestId, string tracePath)
     {
-        if (string.IsNullOrWhiteSpace(requestId) || File.Exists(tracePath)) return false;
+        if (string.IsNullOrWhiteSpace(requestId)) return false;
+        var traceHeader = ReadTraceHeader(tracePath);
+        if (traceHeader.Contains("\"kind\": \"attached\"", StringComparison.Ordinal) ||
+            traceHeader.Contains("\"kind\": \"armed\"", StringComparison.Ordinal))
+            return false;
         try
         {
             var resultsPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(CurrentCapturePath())!, "..",
@@ -572,6 +611,25 @@ public partial class MainWindow
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
         {
             return false;
+        }
+    }
+
+    private static string? CurrentCaptureStartFailure()
+    {
+        try
+        {
+            if (!File.Exists(CurrentCapturePath())) return null;
+            using var json = JsonDocument.Parse(File.ReadAllText(CurrentCapturePath()));
+            var root = json.RootElement;
+            var trace = root.TryGetProperty("trace", out var traceProperty) ? traceProperty.GetString() : null;
+            var request = root.TryGetProperty("requestId", out var requestProperty) ? requestProperty.GetString() : null;
+            return trace is not null && ProbeFailedBeforeAttach(request, trace)
+                ? $"Capture failed before arming; no game events were recorded. Start capture again from the application after startup approval. Raw trace: {trace}"
+                : null;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return null;
         }
     }
 
@@ -600,6 +658,16 @@ public partial class MainWindow
             var root = json.RootElement;
             var trace = root.GetProperty("trace").GetString();
             if (string.IsNullOrWhiteSpace(trace) || TraceShowsDetach(trace)) return null;
+            var captureServerPid = root.TryGetProperty("serverPid", out var captureServer)
+                ? captureServer.GetInt32() : 0;
+            if (!IsProcessRunning(captureServerPid) || !TraceShowsArmed(trace)) return null;
+            if (IsHealingResearchCapture(root, trace))
+            {
+                var serverPid = root.TryGetProperty("serverPid", out var server)
+                    ? server.GetInt32() : 0;
+                return IsProcessRunning(serverPid) && TraceShowsArmed(trace)
+                    ? Path.GetFileName(trace) : null;
+            }
             var bridgePid = root.GetProperty("bridgePid").GetInt32();
             using var bridge = Process.GetProcessById(bridgePid);
             return bridge.HasExited ? null : Path.GetFileName(trace);
@@ -608,6 +676,87 @@ public partial class MainWindow
                                         ArgumentException or System.ComponentModel.Win32Exception)
         {
             return null;
+        }
+    }
+
+    private static bool IsCurrentHealingResearchCapture()
+    {
+        try
+        {
+            var path = CurrentCapturePath();
+            if (!File.Exists(path)) return false;
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            var root = json.RootElement;
+            var trace = root.TryGetProperty("trace", out var traceProperty)
+                ? traceProperty.GetString() : null;
+            return !string.IsNullOrWhiteSpace(trace) && IsHealingResearchCapture(root, trace);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or InvalidOperationException or
+                                        UnauthorizedAccessException or KeyNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsCurrentHealingResearchBridgeActive()
+    {
+        try
+        {
+            var path = CurrentCapturePath();
+            if (!File.Exists(path)) return false;
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            var root = json.RootElement;
+            if (!root.TryGetProperty("captureProfile", out var profile) ||
+                !string.Equals(profile.GetString(), "HealingResearch", StringComparison.OrdinalIgnoreCase) ||
+                !root.TryGetProperty("bridgePid", out var bridge))
+                return false;
+            return IsProcessRunning(bridge.GetInt32());
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or InvalidOperationException or
+                                        UnauthorizedAccessException or KeyNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsHealingResearchCapture(JsonElement root, string trace)
+    {
+        if (root.TryGetProperty("captureProfile", out var profile) &&
+            string.Equals(profile.GetString(), "HealingResearch", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var bridgePid = root.TryGetProperty("bridgePid", out var bridge)
+            ? bridge.GetInt32() : 0;
+        if (bridgePid != 0) return false;
+
+        var header = ReadTraceHeader(trace);
+        var currentEventBatch = header.Contains("\"BattleCommandBegin\"", StringComparison.Ordinal) &&
+            header.Contains("\"AttackEffectCall\"", StringComparison.Ordinal) &&
+            header.Contains("\"NumericEffectCall\"", StringComparison.Ordinal) &&
+            header.Contains("\"ResourceSetEntry\"", StringComparison.Ordinal);
+        var legacyHealingResearch = header.Contains("\"HealingEffectHelper\"", StringComparison.Ordinal) &&
+            header.Contains("\"BattleCommandBegin\"", StringComparison.Ordinal) &&
+            header.Contains("\"HpSet\"", StringComparison.Ordinal);
+        return currentEventBatch || legacyHealingResearch;
+    }
+
+    private static bool TraceShowsArmed(string path) =>
+        ReadTraceHeader(path).Contains("\"kind\": \"armed\"", StringComparison.Ordinal);
+
+    private static string ReadTraceHeader(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var length = (int)Math.Min(stream.Length, 8192);
+            if (length == 0) return "";
+            var buffer = new byte[length];
+            stream.ReadExactly(buffer);
+            return Encoding.UTF8.GetString(buffer);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return "";
         }
     }
 

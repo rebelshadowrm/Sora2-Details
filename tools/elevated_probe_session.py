@@ -69,7 +69,8 @@ def run_fixed(request, pid, request_id):
         stop_file.unlink(missing_ok=True)
         command = [sys.executable, str(ROOT / "tools" / "lifecycle_probe.py"), str(pid),
                    "--expected-sha256", EXPECTED_SHA256,
-                   "--rva", "BattleInit=0xC2750",
+                   "--rva", "BattleCommandBegin=0x1175B8",
+                   "--inspect-turn-context", "BattleCommandBegin",
                    "--rva", "BattleEnd=0xBA659",
                    "--rva", "AttackEffectCall=0xE3E55",
                    "--inspect-attack-call", "AttackEffectCall",
@@ -77,7 +78,8 @@ def run_fixed(request, pid, request_id):
                    "--inspect-actor-bytes", "AttackEffectCall",
                    "--inspect-effect-descriptor", "AttackEffectCall",
                    "--enemy-table-pac", str(enemy_table_pac),
-                   "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
+                   "--rva", "ResourceSetEntry=0xF8DB0",
+                   "--inspect-resource-set", "ResourceSetEntry",
                    "--stop-file", str(stop_file),
                    "--seconds", str(seconds), "--max-hits", "100000"]
         timeout = seconds + 45
@@ -91,7 +93,8 @@ def run_fixed(request, pid, request_id):
         stop_file.unlink(missing_ok=True)
         command = [sys.executable, str(ROOT / "tools" / "lifecycle_probe.py"), str(pid),
                    "--expected-sha256", EXPECTED_SHA256,
-                   "--rva", "BattleInit=0xC2750",
+                   "--rva", "BattleCommandBegin=0x1175B8",
+                   "--inspect-turn-context", "BattleCommandBegin",
                    "--rva", "BattleEnd=0xBA659",
                    "--rva", "AttackEffectCall=0xE3E55",
                    "--inspect-attack-call", "AttackEffectCall",
@@ -100,7 +103,8 @@ def run_fixed(request, pid, request_id):
                    "--inspect-result-frame", "AttackEffectCall",
                    "--inspect-effect-descriptor", "AttackEffectCall",
                    "--enemy-table-pac", str(enemy_table_pac),
-                   "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
+                   "--rva", "ResourceSetEntry=0xF8DB0",
+                   "--inspect-resource-set", "ResourceSetEntry",
                    "--stop-file", str(stop_file),
                    "--seconds", str(seconds), "--max-hits", "2000000"]
         timeout = seconds + 45
@@ -167,14 +171,41 @@ def run_fixed(request, pid, request_id):
         stop_file.unlink(missing_ok=True)
         command = [sys.executable, str(ROOT / "tools" / "lifecycle_probe.py"), str(pid),
                    "--expected-sha256", EXPECTED_SHA256,
-                   "--rva", "BattleInit=0xC2750",
                    "--rva", "BattleCommandBegin=0x1175B8",
                    "--inspect-turn-context", "BattleCommandBegin",
-                   "--rva", "HealingEffectHelper=0xE4530",
-                   "--inspect-effect-entry", "HealingEffectHelper",
-                   "--rva", "HpSet=0xF8EB3", "--inspect-hp-set", "HpSet",
+                   "--rva", "AttackEffectCall=0xE3E55",
+                   "--inspect-attack-call", "AttackEffectCall",
+                   "--inspect-actor-identity", "AttackEffectCall",
+                   "--inspect-actor-bytes", "AttackEffectCall",
+                   "--inspect-effect-descriptor", "AttackEffectCall",
+                   "--enemy-table-pac", str(enemy_table_pac),
+                   "--rva", "NumericEffectCall=0xE1A67",
+                   "--inspect-effect-application", "NumericEffectCall",
+                   "--rva", "ResourceSetEntry=0xF8DB0",
+                   "--inspect-resource-set", "ResourceSetEntry",
                    "--stop-file", str(stop_file),
                    "--seconds", str(seconds), "--max-hits", "100000"]
+        timeout = seconds + 45
+    elif action == "healing_modifier_capture":
+        seconds = request.get("seconds", 300)
+        if type(seconds) is not int or not 60 <= seconds <= 300:
+            raise ValueError("Healing modifier capture seconds must be 60..300")
+        LIVE_DIR.mkdir(parents=True, exist_ok=True)
+        output = LIVE_DIR / f"probe-session-{request_id}.jsonl"
+        stop_file = LIVE_DIR / f"stop-{request_id}"
+        stop_file.unlink(missing_ok=True)
+        command = [sys.executable, str(ROOT / "tools" / "lifecycle_probe.py"), str(pid),
+                   "--expected-sha256", EXPECTED_SHA256,
+                   "--rva", "EffectRowCall=0x1155D7",
+                   "--inspect-effect-row-call", "EffectRowCall",
+                   "--rva", "NumericEffectCall=0xE1A67",
+                   "--inspect-effect-application", "NumericEffectCall",
+                   "--rva", "HealingEffectHelper=0xE4530",
+                   "--inspect-effect-entry", "HealingEffectHelper",
+                   "--rva", "ResourceSetEntry=0xF8DB0",
+                   "--inspect-resource-set", "ResourceSetEntry",
+                   "--stop-file", str(stop_file),
+                   "--seconds", str(seconds), "--max-hits", "30000"]
         timeout = seconds + 45
     elif action == "result_class_capture":
         seconds = request.get("seconds", 180)
@@ -337,7 +368,8 @@ def send(args):
     request_id = uuid.uuid4().hex
     request = {"sessionId": ready["sessionId"], "action": args.action}
     if args.action in ("name_capture", "boundary_capture", "turn_capture",
-                       "action_id_capture", "healing_capture", "result_class_capture", "critical_capture",
+                       "action_id_capture", "healing_capture", "healing_modifier_capture",
+                       "result_class_capture", "critical_capture",
                        "critical_long_capture", "critical_popup_capture",
                        "live_capture", "session_capture"):
         request["seconds"] = args.seconds if args.seconds is not None else (
@@ -345,6 +377,7 @@ def send(args):
             43200 if args.action == "session_capture" else
             1800 if args.action in ("live_capture", "critical_long_capture") else
             1800 if args.action == "healing_capture" else
+            300 if args.action == "healing_modifier_capture" else
             300 if args.action == "critical_popup_capture" else
             180 if args.action in ("turn_capture", "action_id_capture",
                                    "result_class_capture", "critical_capture") else 120)
@@ -378,7 +411,8 @@ def main():
     client = modes.add_parser("send")
     client.add_argument("action", choices=("ping", "status_snapshot", "scan_status",
                                            "name_capture", "boundary_capture", "turn_capture",
-                                           "action_id_capture", "healing_capture", "result_class_capture", "critical_capture",
+                                           "action_id_capture", "healing_capture", "healing_modifier_capture",
+                                           "result_class_capture", "critical_capture",
                                            "critical_long_capture", "critical_popup_capture", "live_capture",
                                            "session_capture", "stop"))
     client.add_argument("--seconds", type=int)

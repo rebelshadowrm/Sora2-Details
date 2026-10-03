@@ -12,16 +12,28 @@ Store raw observed IDs/codes, source and target instance keys, timestamps/order,
 
 ## Current implementation gap
 
-`CombatEvent` and capture protocol v1 are effect-centric: `EffectObserved` can represent a resolved HP effect, status marker, knockout, or revival, but there is no independent action-start/execution record, no generic unknown-result envelope, no typed miss/guard/resource outcome, and no entry-state snapshot. The current partial live replay confirms **one attack-result path** paired to HP writes, not every command-battle event. `BattleStart` is not yet a reliable universal entry marker. The logger and UI must not claim full combat-log coverage from those observations.
+Encounter schema v2 persists separate ActionObserved, ResourceChange, Healing, HpLoss, and StateWriteObserved rows, raw effect/property keys, move lookup provenance, and enemy status-lookup candidates. The standard Live profile opens a partial encounter at the first BattleCommandBegin and records AttackEffectCall, BattleEnd, and the shared HP/EP/CP setter. HealingResearch also starts the encounter bridge and projects NumericEffectCall observations to history; it omits BattleEnd, so the result stays unknown after capture stops. A callback records only the observed effect stage, not selected-command identity or execution/cancellation state. Non-damaging action coverage, status outcomes, interrupts, misses, guards, the exact battle outcome, and some effect routes remain unresolved. The UI must show the partial-coverage gaps and must not claim full command-battle coverage.
 
-Do not force unverified game semantics into a guessed enum just to fill this gap. The next protocol/model revision should preserve an append-only raw observation stream first, then derive typed actions and results as IDs and code meanings are proven. Keep a stable sequence and action/target relationship, raw payload/code, observation provenance, and explicit unknown and gap records. Store both the raw record and enriched label snapshot so mappings can be improved without rewriting what was observed. Version the protocol and persisted schema when implementing that revision; do not silently change v1 JSON meaning.
+Do not force unverified game semantics into a guessed enum just to fill this gap. Schema v2 additions preserve observed callback stages, set/add requests, calculated pre-write outcomes, raw property codes, and lookup provenance. The raw JSONL remains the source record; encounter rows are enrichments that point back to it. Future additions should keep a stable sequence and action/target relationship, raw key, observation provenance, and explicit unknown/gap records. Do not give calculated setter outcomes the same certainty as a post-write read.
+
+## Downstream stat-change projection
+
+After authoritative action and outcome capture is established, observe party and
+enemy stats across buff/debuff application, refresh, stacking, expiration and
+removal. Preserve the application event separately from stat snapshots and
+derived differences. Display a verified before/after stat change when observed;
+otherwise display the application alone, with an unknown stat effect. A static
+buff definition is not evidence that the target's stat changed. Preserve caps,
+resistance and ambiguous overlapping causes rather than attributing every nearby
+change to the latest condition. This is downstream work, not a reason to defer
+capture of unnamed application events.
 
 ## Work order and evidence gates
 
 1. **Boundary and scope:** prove command-battle active state and outcome across entry, victory, Escape/re-entry, and one quick-battle negative control. Snapshot the baseline roster/HP at entry.
 2. **Action stream:** find an execution-level action signal independent of HP changes. Verify one normal Attack, one support/no-damage action, one multi-target or multi-hit action, and an interrupted/missed action if available. Compare count, order, actor, and ID against player notes.
 3. **Outcome stream:** identify all result application routes, not only the verified attack/HP route. Reconcile each action's target outcomes with HP/EP/CP/status writes and explicit zero/miss/guard cases; preserve unmatched raw codes and mark gaps. Verify healing, enemy damage, knockouts, revival, status effects, and reflection when available.
-4. **Durable transcript:** record a full representative command battle to a versioned append-only log with per-record sequence, actor/action linkage, observed raw fields, enrichment/provenance, and explicit partial coverage. Replay must reproduce the same action/result count and order after restart.
+4. **Durable transcript:** record a representative command battle to a versioned log with per-record sequence, actor/action linkage, observed raw fields, enrichment/provenance, and explicit partial coverage. Keep the raw JSONL and the log linked. Replay must reproduce the same action/result count and order after restart.
 5. **Meter projection:** derive totals, timelines, and death recaps from that transcript; prove that every projected number links back to specific log entries and that unsupported events remain visible rather than silently affecting totals.
 
 For each test fight, maintain a coverage ledger: visible action count, captured execution count, captured per-target result count, HP/resource/status transitions, unmatched records, and dropped/unknown codes. The ledger separates **observed complete for tested event classes** from **full command-battle coverage not yet demonstrated**. A controlled battle with no missed records is necessary but not sufficient; repeat across action classes, outcomes, animation speed, and same-name enemy instances before calling the logger complete.

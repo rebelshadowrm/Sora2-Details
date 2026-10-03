@@ -1,6 +1,7 @@
 param(
     [int]$Seconds = 1800,
-    [ValidateSet('Live', 'HealingResearch')][string]$CaptureProfile = 'Live',
+    [ValidateSet('Live', 'HealingResearch', 'HealingCrossCheck')][string]$CaptureProfile = 'Live',
+    [switch]$TryUnprivileged,
     [string]$PythonPath,
     [string]$GameDirectory = 'C:\Games\Trails in the Sky 2nd Chapter'
 )
@@ -64,7 +65,14 @@ $minutes = [int][Math]::Ceiling($Seconds / 60.0) + 3
 if ($CaptureProfile -eq 'HealingResearch' -and $Seconds -gt 3600) {
     throw 'Healing research capture supports at most 3600 seconds.'
 }
-$captureAction = if ($CaptureProfile -eq 'HealingResearch') { 'healing_capture' } elseif ($Seconds -gt 3600) { 'session_capture' } else { 'live_capture' }
+if ($CaptureProfile -eq 'HealingCrossCheck' -and $Seconds -gt 300) {
+    throw 'Healing cross-check capture supports at most 300 seconds.'
+}
+$captureAction = switch ($CaptureProfile) {
+    'HealingResearch' { 'healing_capture' }
+    'HealingCrossCheck' { 'healing_modifier_capture' }
+    default { if ($Seconds -gt 3600) { 'session_capture' } else { 'live_capture' } }
+}
 $sessionDir = Join-Path $dataDir 'probe-session'
 $readyPath = Join-Path $sessionDir 'ready.json'
 $server = Join-Path $PSScriptRoot 'elevated_probe_session.py'
@@ -88,7 +96,8 @@ function Start-CaptureAttempt {
     Assert-CaptureStartNotCancelled
     try {
         & (Join-Path $PSScriptRoot 'start_probe_session.ps1') -TargetPid $games[0].Id `
-            -Minutes $minutes -PythonPath $PythonPath -ErrorAction Stop | Out-Null
+            -Minutes $minutes -PythonPath $PythonPath -TryUnprivileged:$TryUnprivileged `
+            -ErrorAction Stop | Out-Null
     } catch {
         throw
     }
@@ -109,6 +118,7 @@ function Start-CaptureAttempt {
         $attemptTrace = Join-Path $liveDir "probe-session-$attemptRequestId.jsonl"
         $attemptStopFile = Join-Path $liveDir "stop-$attemptRequestId"
         @{
+            captureProfile = $CaptureProfile
             requestId = $attemptRequestId
             targetPid = $games[0].Id
             bridgePid = 0
@@ -160,6 +170,7 @@ $requestId = $captureAttempt.RequestId
 $trace = $captureAttempt.Trace
 $stopFile = Join-Path $liveDir "stop-$requestId"
 @{
+    captureProfile = $CaptureProfile
     requestId = $requestId
     targetPid = $games[0].Id
     bridgePid = 0
@@ -176,7 +187,7 @@ $stopFile = Join-Path $liveDir "stop-$requestId"
 & $PythonPath $server send stop --no-wait | Out-Null
 
 $bridgePid = 0
-if ($CaptureProfile -eq 'Live') {
+if ($CaptureProfile -in @('Live', 'HealingResearch')) {
     $bridge = Join-Path $PSScriptRoot 'live_capture_bridge.py'
     $arguments = '"' + $bridge + '" "' + $trace + '" --table-pac "' + $tablePac +
         '" --script-pac "' + $scriptPac + '" --follow --max-wait-seconds ' + ($Seconds + 60)
@@ -193,6 +204,7 @@ if ($CaptureProfile -eq 'Live') {
 }
 
 @{
+    captureProfile = $CaptureProfile
     requestId = $requestId
     targetPid = $games[0].Id
     bridgePid = $bridgePid
@@ -220,6 +232,7 @@ $desktopProcess = if ($runningDesktop.Count -eq 1) {
 }
 
 @{
+    captureProfile = $CaptureProfile
     requestId = $requestId
     targetPid = $games[0].Id
     bridgePid = $bridgePid
@@ -231,8 +244,10 @@ $desktopProcess = if ($runningDesktop.Count -eq 1) {
     trace = $trace
     stopFile = $stopFile
 } | ConvertTo-Json | Set-Content -LiteralPath $currentPath -Encoding UTF8
-if ($CaptureProfile -eq 'HealingResearch') {
-    Write-Output "Healing research capture armed for $Seconds seconds (game PID $($games[0].Id)); raw trace only."
+if ($CaptureProfile -in @('HealingResearch', 'HealingCrossCheck')) {
+    $captureName = if ($CaptureProfile -eq 'HealingCrossCheck') { 'Healing cross-check' } else { 'Healing research' }
+    $captureMode = if ($TryUnprivileged) { 'standard-user diagnostic' } elseif ($CaptureProfile -eq 'HealingResearch') { 'event-ledger projection enabled' } else { 'raw trace only' }
+    Write-Output "$captureName capture armed for $Seconds seconds (game PID $($games[0].Id)); $captureMode."
 } else {
     Write-Output "LIVE / PARTIAL capture armed for $Seconds seconds (game PID $($games[0].Id))."
 }

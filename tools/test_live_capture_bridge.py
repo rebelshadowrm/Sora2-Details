@@ -4,11 +4,15 @@ import json
 from pathlib import Path
 import struct
 import tempfile
+import threading
+import time
 
 from live_capture_bridge import (LiveBridge, consume, damage_class_for_flags,
                                  source_context_flags, lookup_live_move,
                                  lookup_live_move_with_reason,
-                                 observed_effect_descriptor, target_status_7c)
+                                 lookup_resource_skill_with_reason,
+                                 observed_effect_descriptor, read_r14_context_snapshots,
+                                 target_status_7c)
 
 
 def main():
@@ -84,18 +88,24 @@ def main():
         bridge = consume(trace, root / "encounters", table_rows=[enemy_row])
         encounters = [json.loads(path.read_text(encoding="utf-8"))
                       for path in (root / "encounters").glob("*.json")]
-        assert bridge.changed >= 6
+        # Two starts, a verified end, and the interrupted next encounter each
+        # produce a durable snapshot; intra-second writes may coalesce.
+        assert bridge.changed >= 4
         assert len(encounters) == 2
         first = next(encounter for encounter in encounters if encounter["outcome"] == "Unknown")
-        assert [event["kind"] for event in first["events"]] == [
+        actions = [event for event in first["events"] if event["kind"] == "ActionObserved"]
+        outcomes = [event for event in first["events"] if event["kind"] != "ActionObserved"]
+        assert len(actions) == 2
+        assert all(event["eventStage"] == "attack-effect-call" for event in actions)
+        assert [event["kind"] for event in outcomes] == [
             "Damage", "Healing", "HpLoss", "Unknown", "Damage", "Knockout"]
-        assert [event["effectiveAmount"] for event in first["events"]] == [10, 10, 5, None, 55, None], first["events"]
-        assert first["events"][0]["rawResultFlags"] == 0x42000
-        assert first["events"][0]["isCritical"] is None
-        assert first["events"][0]["damageClass"] == "Physical"
-        assert first["events"][0]["moveLookupReason"] == "effect-descriptor-missing"
-        assert first["events"][1]["moveLookupReason"] == "hp-write-without-attack-result"
-        assert first["events"][-1]["moveLookupReason"] == "effect-descriptor-missing"
+        assert [event["effectiveAmount"] for event in outcomes] == [10, 10, 5, None, 55, None], outcomes
+        assert outcomes[0]["rawResultFlags"] == 0x42000
+        assert outcomes[0]["isCritical"] is None
+        assert outcomes[0]["damageClass"] == "Physical"
+        assert outcomes[0]["moveLookupReason"] == "effect-descriptor-missing"
+        assert outcomes[1]["moveLookupReason"] == "hp-write-without-attack-result"
+        assert outcomes[-1]["moveLookupReason"] == "effect-descriptor-missing"
         assert {actor["name"] for actor in first["actors"]} == {"Agate", "Synthetic Enemy"}
         assert next(actor for actor in first["actors"] if actor["team"] == "Enemy")["nameProvenance"] == "unique-stat-signature/exact-English-t_status"
         assert not first["isComplete"] and first["issues"]
@@ -118,6 +128,181 @@ def main():
             {"unitId": "mon-synthetic", "name": "Synthetic Enemy"},
             {"unitId": "mon-synthetic", "name": "Another Enemy"}]
         assert any("ambiguous" in issue for issue in ambiguous.current["issues"])
+        tear_id = 0xFFFF0076
+        tear_params = (0x10, 0x20, 0x30)
+        tear_row_bytes = bytearray(0xB0)
+        struct.pack_into("<I", tear_row_bytes, 0, tear_id)
+        for offset, value in zip(tear_params, (1, 2, 3)):
+            struct.pack_into("<I", tear_row_bytes, offset, value)
+        tear_row = {"packedId": tear_id, "ownerId": 119, "skillId": 118,
+                    "name": "Tear", "rawParam10": 1, "rawParam20": 2,
+                    "rawParam30": 3}
+        healing = LiveBridge(root / "numeric_heal", "numeric_heal.jsonl",
+                             skill_rows=[tear_row])
+        module_base = 0x7FF700000000
+        healing.handle({"kind": "executable",
+                        "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"})
+        healing.handle({"kind": "module", "base": hex(module_base),
+                        "breakpoints": {"NumericEffectCall": hex(module_base + 0xE1A67),
+                                        "ResourceSetEntry": hex(module_base + 0xF8DB0)}})
+        healing.handle({"at": at, "kind": "hit", "name": "BattleCommandBegin", "tid": 77})
+        numeric_at = "2026-09-28T16:00:01.000-05:00"
+        healing.handle({"at": numeric_at, "kind": "hit", "name": "NumericEffectCall",
+                        "tid": 77, "source_status_ptr": "0x11", "source_actor_id": 119,
+                        "target_status_ptr": "0x22", "target_actor_id": 5,
+                        "skill_row_packed_id_candidate": tear_id,
+                        "skill_row_0xb0_candidate": tear_row_bytes.hex(),
+                        "result_entry_amount": 1200})
+        healing.handle({"at": numeric_at, "kind": "hit", "name": "ResourceSetEntry",
+                        "tid": 77, "status_ptr": "0x22", "status_actor_id": 5,
+                        "property_code": 7, "value_before": 1000,
+                        "maximum_before": 2000, "requested_value": 2200,
+                        "caller_return_rva": "0xe4db1"})
+        numeric_actions = [event for event in healing.current["events"]
+                           if event["kind"] == "ActionObserved"]
+        numeric_heals = [event for event in healing.current["events"]
+                         if event["kind"] == "Healing"]
+        assert len(numeric_actions) == 1 and numeric_actions[0]["moveName"] == "Tear"
+        assert numeric_actions[0]["moveNameProvenance"] == (
+            "live-NumericEffectCall-R14/exact-English-t_skill")
+        assert numeric_actions[0]["candidateAmount"] == 1200
+        assert len(numeric_heals) == 1
+        assert numeric_heals[0]["sourceId"] == "status-11"
+        assert next(actor for actor in healing.current["actors"]
+                    if actor["id"] == "status-11")["runtimeStatusId"] == 119
+        assert numeric_heals[0]["effectiveAmount"] == 1000
+        assert numeric_heals[0]["candidateAmount"] == 1200
+        assert numeric_heals[0]["actionId"] == numeric_actions[0]["actionId"]
+        assert numeric_heals[0]["moveName"] == "Tear"
+        for caller, amount in (("0xe4a67", 1200), ("0xe4db1", 900)):
+            contrast = LiveBridge(root / f"heal_contrast_{caller}_{amount}", "contrast.jsonl", skill_rows=[tear_row])
+            contrast.executable_sha256 = healing.executable_sha256
+            contrast.module_base = healing.module_base
+            contrast.module_breakpoints = healing.module_breakpoints
+            contrast.start({"at": at})
+            contrast.handle({"at": numeric_at, "kind": "hit", "name": "NumericEffectCall",
+                "tid": 77, "source_status_ptr": "0x11", "source_actor_id": 119,
+                "target_status_ptr": "0x22", "target_actor_id": 5,
+                "skill_row_0xb0_candidate": tear_row_bytes.hex(), "result_entry_amount": amount})
+            contrast.handle({"at": numeric_at, "kind": "hit", "name": "ResourceSetEntry",
+                "tid": 77, "status_ptr": "0x22", "status_actor_id": 5,
+                "property_code": 7, "value_before": 1000, "maximum_before": 3000,
+                "requested_value": 2200, "caller_return_rva": caller})
+            heal = next(event for event in contrast.current["events"] if event["kind"] == "Healing")
+            assert heal["sourceId"] is None and heal["actionId"] is None
+            assert heal["moveName"] == "Unattributed HP write"
+        snapshot_path = root / "numeric_context_snapshot.jsonl"
+        snapshot_path.write_text(
+            json.dumps({"kind": "executable",
+                        "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"}) +
+            "\n" + json.dumps({"kind": "context", "address": "0x99",
+                               "bytes_600": (tear_row_bytes + bytearray(0x600 - 0xB0)).hex()}) +
+            "\n" + json.dumps({"kind": "context", "address": "0x77",
+                               "bytes_600": (bytearray(0x600)).hex()}) + "\n",
+            encoding="utf-8")
+        heat_up_id = 0xFFFF2721
+        heat_up_bytes = bytearray(0x600)
+        struct.pack_into("<I", heat_up_bytes, 0, heat_up_id)
+        for offset, value in zip(tear_params, (4, 5, 6)):
+            struct.pack_into("<I", heat_up_bytes, offset, value)
+        snapshot_lines = snapshot_path.read_text(encoding="utf-8").splitlines()
+        snapshot_lines[-1] = json.dumps({"kind": "context", "address": "0x77",
+                                         "bytes_600": heat_up_bytes.hex()})
+        snapshot_path.write_text("\n".join(snapshot_lines) + "\n", encoding="utf-8")
+        snapshot_rows = read_r14_context_snapshots([snapshot_path])
+        cross_trace = LiveBridge(root / "numeric_cross_trace", "numeric_cross_trace.jsonl",
+                                 skill_rows=[tear_row], r14_context_snapshots=snapshot_rows)
+        cross_trace.handle({"kind": "executable",
+                            "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"})
+        cross_trace.handle({"kind": "module", "base": hex(module_base),
+                            "breakpoints": {"NumericEffectCall": hex(module_base + 0xE1A67)}})
+        cross_trace.start({"at": at})
+        cross_trace.handle({"at": numeric_at, "kind": "hit", "name": "NumericEffectCall",
+                            "tid": 77, "r14": "0x99",
+                            "source_status_ptr": "0x11", "source_actor_id": 119,
+                            "target_status_ptr": "0x22", "target_actor_id": 5,
+                            "skill_row_packed_id_candidate": tear_id})
+        cross_event = cross_trace.current["events"][0]
+        assert cross_event["moveName"] is None
+        assert cross_event["moveNameProvenance"] is None
+        assert cross_event["moveLookupReason"] == "numeric-effect-skill-row-bytes-missing"
+        assert cross_event["rawEffectId"] == "0xFFFF0076"  # Observed inline key survives.
+        assert cross_event["rawEffectCode"] is None  # Never invent bytes from another trace.
+        heat_up_row = {"packedId": heat_up_id, "ownerId": 65535, "skillId": 10017,
+                       "name": "Heat Up II", "rawParam10": 4, "rawParam20": 5,
+                       "rawParam30": 6}
+        cp_bridge = LiveBridge(root / "cp_cross_trace", "cp_cross_trace.jsonl",
+                               skill_rows=[heat_up_row],
+                               r14_context_snapshots=snapshot_rows)
+        cp_bridge.handle({"kind": "executable",
+                          "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"})
+        cp_bridge.handle({"kind": "module", "base": hex(module_base),
+                          "breakpoints": {"ResourceSetEntry": hex(module_base + 0xF8DB0)}})
+        cp_bridge.start({"at": at})
+        cp_bridge.handle({"at": numeric_at, "kind": "hit", "name": "ResourceSetEntry",
+                          "tid": 77, "r14": "0x77", "status_ptr": "0x22",
+                          "status_actor_id": 5, "property_code": 12,
+                          "value_before": 200, "maximum_before": 200,
+                          "requested_value": 40,
+                          "caller_return": hex(module_base + 0xE1FAD)})
+        cp_event = cp_bridge.current["events"][0]
+        assert cp_event["kind"] == "ResourceChange"
+        assert cp_event["moveName"] is None
+        assert cp_event["moveNameProvenance"] is None
+        assert cp_event["rawEffectId"] is None
+        assert cp_event["moveLookupReason"] == "resource-skill-row-bytes-missing"
+        assert cp_event["resourceCandidateDelta"] == 0
+        assert cp_event["requestedResourceValue"] == 40
+        assert cp_event["sourceId"] is None
+        cp_bridge.handle({"at": numeric_at, "kind": "hit", "name": "ResourceSetEntry",
+            "tid": 77, "status_ptr": "0x22", "status_actor_id": 5, "property_code": 12,
+            "value_before": 100, "maximum_before": 200, "requested_value": 40,
+            "caller_return_rva": "0xe1fad", "skill_row_0xb0_candidate": heat_up_bytes[:0xB0].hex()})
+        assert cp_bridge.current["events"][-1]["moveName"] == "Heat Up II"
+        assert cp_bridge.current["events"][-1]["resourceCandidateDelta"] == 40
+        resource_trace = root / "resource_recovery.jsonl"
+        resource_dir = root / "resource_recovery_encounters"
+        resource_records = [
+            {"kind": "executable",
+             "sha256": "D8B2911D1576216BDC22D070550E4F531E105DE7ED2981885849669F4ACF8AAF"},
+            {"kind": "module", "base": hex(module_base),
+             "breakpoints": {"ResourceSetEntry": hex(module_base + 0xF8DB0)}},
+            {"at": at, "kind": "hit", "name": "ResourceSetEntry",
+             "tid": 77, "r14": "0x77", "status_ptr": "0x22",
+             "status_actor_id": 5, "property_code": 12,
+             "value_before": 200, "maximum_before": 200, "requested_value": 40,
+             "caller_return": hex(module_base + 0xE1FAD)},
+            {"at": numeric_at, "kind": "detached"},
+        ]
+        resource_trace.write_text("".join(json.dumps(record) + "\n"
+                                          for record in resource_records),
+                                  encoding="utf-8")
+        consume(resource_trace, resource_dir, skill_rows=[heat_up_row],
+                r14_context_snapshots=snapshot_rows, recover_first_resource=True)
+        recovered_resource = json.loads(next(resource_dir.glob("*.json")).read_text(
+            encoding="utf-8"))
+        assert recovered_resource["outcome"] == "Unknown"
+        assert recovered_resource["events"][0]["moveName"] is None
+        assert any("first resource-setter callback" in issue
+                   for issue in recovered_resource["issues"])
+        _, wrong_caller_reason = lookup_resource_skill_with_reason(
+            {"property_code": 12, "caller_return": hex(module_base + 0xE45A7),
+             "r14": "0x77"}, cp_bridge.skill_lookup, snapshot_rows,
+            module_base, path_verified=True)
+        assert wrong_caller_reason == "resource-skill-caller-unverified"
+        unverified_numeric = LiveBridge(root / "numeric_unverified", "numeric.jsonl",
+                                        skill_rows=[tear_row])
+        unverified_numeric.start({"at": at})
+        unverified_numeric.handle({"at": numeric_at, "kind": "hit",
+                                   "name": "NumericEffectCall", "tid": 77,
+                                   "source_status_ptr": "0x11", "source_actor_id": 119,
+                                   "target_status_ptr": "0x22", "target_actor_id": 5,
+                                   "skill_row_packed_id_candidate": tear_id,
+                                   "skill_row_0xb0_candidate": tear_row_bytes.hex()})
+        assert unverified_numeric.current["events"][0]["moveName"] is None
+        assert unverified_numeric.current["events"][0]["rawEffectId"] == "0xFFFF0076"
+        assert unverified_numeric.current["events"][0]["moveLookupReason"] == (
+            "numeric-effect-callsite-unverified")
         hit_status = LiveBridge(root / "hit_status", "synthetic.jsonl", table_rows=[enemy_row])
         hit_status.handle({"at": at, "kind": "hit", "name": "BattleInit"})
         hit_status.handle({"at": at, "kind": "hit", "name": "AttackEffectCall", "tid": 1,
@@ -155,10 +340,12 @@ def main():
         interleaved.handle({"at": at, "kind": "hit", "name": "HpSet", "tid": 1,
                             "status_ptr": "0x22", "status_actor_id": 60050,
                             "hp_before": 20, "hp_max": 20, "requested_hp": 10})
-        assert [event["kind"] for event in interleaved.current["events"]] == ["Healing", "Damage"]
-        assert interleaved.current["events"][0]["sourceId"] is None
-        assert interleaved.current["events"][0]["moveLookupReason"] == "hp-write-without-attack-result"
-        assert interleaved.current["events"][1]["sourceId"] == "status-11"
+        interleaved_events = interleaved.current["events"]
+        assert [event["kind"] for event in interleaved_events] == [
+            "ActionObserved", "Healing", "Damage"]
+        assert interleaved_events[1]["sourceId"] is None
+        assert interleaved_events[1]["moveLookupReason"] == "hp-write-without-attack-result"
+        assert interleaved_events[2]["sourceId"] == "status-11"
         assert not interleaved.pending
         swapped = LiveBridge(root / "swapped", "synthetic.jsonl", name_rows=[
             {"characterId": 4, "name": "Kloe", "statusUnitKey": "chr5004p"}])
@@ -365,8 +552,10 @@ def main():
                              "status_actor_id": 60050, "status_ptr": "0x22",
                              "hp_before": 50, "hp_max": 50,
                              "requested_hp": 40})
+        attack_retry_outcomes = [event for event in attack_retry.current["events"]
+                                 if event["kind"] != "ActionObserved"]
         assert [(event["kind"], event["effectiveAmount"]) for event in
-                attack_retry.current["events"]] == [("Damage", 10)]
+                attack_retry_outcomes] == [("Damage", 10)]
         assert attack_retry.current["events"][0]["sourceId"] == "status-2"
         old_attempt = next(json.loads(path.read_text(encoding="utf-8"))
                            for path in (root / "attack_retry").glob("*.json")
@@ -395,6 +584,119 @@ def main():
                               "status_actor_id": 3, "status_ptr": "0x4",
                               "hp_before": 100, "hp_max": 100, "requested_hp": 120})
         assert revive_bridge.current["id"] == revived_fight_id
+        # Join an already-open command battle at its next command callback;
+        # callbacks outside that boundary remain excluded.
+        midbattle_trace = root / "midbattle.jsonl"
+        midbattle_dir = root / "midbattle_encounters"
+        midbattle_records = [
+            {"at": "2026-09-28T16:10:00.000-05:00", "kind": "hit",
+             "name": "AttackEffectCall", "tid": 1,
+             "source_status_ptr": "0x11", "target_status_ptr": "0x22",
+             "source_actor_id": 5, "target_actor_id": 60050,
+             "candidate_resolved_amount": 99},
+            {"at": "2026-09-28T16:10:01.000-05:00", "kind": "hit",
+             "name": "BattleCommandBegin", "tid": 1},
+            {"at": "2026-09-28T16:10:02.000-05:00", "kind": "hit",
+             "name": "AttackEffectCall", "tid": 1,
+             "source_status_ptr": "0x11", "target_status_ptr": "0x22",
+             "source_actor_id": 5, "target_actor_id": 60050,
+             "candidate_resolved_amount": 10},
+            {"at": "2026-09-28T16:10:02.001-05:00", "kind": "hit",
+             "name": "HpSet", "tid": 1, "status_ptr": "0x22",
+             "status_actor_id": 60050, "hp_before": 20, "hp_max": 20,
+             "requested_hp": 10},
+            {"at": "2026-09-28T16:10:03.000-05:00", "kind": "hit",
+             "name": "BattleEnd", "tid": 1},
+            {"at": "2026-09-28T16:10:03.010-05:00", "kind": "hit",
+             "name": "BattleEnd", "tid": 1},
+            {"at": "2026-09-28T16:10:04.000-05:00", "kind": "hit",
+             "name": "AttackEffectCall", "tid": 1,
+             "source_status_ptr": "0x11", "target_status_ptr": "0x22",
+             "source_actor_id": 5, "target_actor_id": 60050,
+             "candidate_resolved_amount": 99},
+            {"at": "2026-09-28T16:10:05.000-05:00", "kind": "detached"},
+        ]
+        midbattle_trace.write_text("".join(json.dumps(record) + "\n"
+                                         for record in midbattle_records),
+                                   encoding="utf-8")
+        consume(midbattle_trace, midbattle_dir)
+        midbattle_rows = [json.loads(path.read_text(encoding="utf-8"))
+                          for path in midbattle_dir.glob("*.json")]
+        assert len(midbattle_rows) == 1
+        assert midbattle_rows[0]["outcome"] == "Unknown"
+        assert midbattle_rows[0]["issues"][0].startswith("Live partial capture:")
+        assert any("first observed command callback" in issue
+                   for issue in midbattle_rows[0]["issues"])
+        midbattle_outcomes = [event for event in midbattle_rows[0]["events"]
+                              if event["kind"] != "ActionObserved"]
+        assert [event["effectiveAmount"] for event in midbattle_outcomes] == [10]
+
+        # Older user-confirmed traces can be explicitly recovered when they
+        # contain neither battle-entry nor command callbacks.
+        recovery_trace = root / "recovered.jsonl"
+        recovery_dir = root / "recovered_encounters"
+        recovery_records = [midbattle_records[index] for index in (2, 3, 4, 5)]
+        recovery_records.append({"at": "2026-09-28T16:10:05.000-05:00",
+                                 "kind": "detached"})
+        recovery_trace.write_text("".join(json.dumps(record) + "\n"
+                                         for record in recovery_records),
+                                  encoding="utf-8")
+        consume(recovery_trace, recovery_dir, recover_first_attack=True,
+                player_confirmed_outcome="Victory")
+        recovered_rows = [json.loads(path.read_text(encoding="utf-8"))
+                          for path in recovery_dir.glob("*.json")]
+        assert len(recovered_rows) == 1
+        assert any("first observed attack-effect callback" in issue
+                   for issue in recovered_rows[0]["issues"])
+        assert recovered_rows[0]["outcome"] == "Victory"
+        assert any("Victory outcome supplied by the player" in issue
+                   for issue in recovered_rows[0]["issues"])
+        recovered_outcomes = [event for event in recovered_rows[0]["events"]
+                              if event["kind"] != "ActionObserved"]
+        assert [event["effectiveAmount"] for event in recovered_outcomes] == [10]
+        boundaryless = LiveBridge(root / "boundaryless", "boundaryless.jsonl")
+        boundaryless.handle({"kind": "module", "base": hex(module_base),
+                             "breakpoints": {"NumericEffectCall": hex(module_base + 0xE1A67)}})
+        boundaryless.start({"at": at})
+        boundaryless.interrupt("Probe detached.")
+        assert boundaryless.current is None
+        boundaryless_file = next((root / "boundaryless").glob("*.json"))
+        boundaryless_row = json.loads(boundaryless_file.read_text(encoding="utf-8"))
+        assert boundaryless_row["outcome"] == "Unknown"
+        assert any("did not watch BattleEnd" in issue
+                   for issue in boundaryless_row["issues"])
+        # A lone event must become durable without waiting for another action.
+        # A live JSONL append may be split; only parse completed lines.
+        idle_trace = root / "idle.jsonl"
+        idle_dir = root / "idle_encounters"
+        idle_trace.write_text(json.dumps({"kind": "hit", "name": "BattleCommandBegin", "at": at}) + "\n")
+        follower_errors = []
+        def follow_idle():
+            try:
+                consume(idle_trace, idle_dir, follow=True, max_wait_seconds=5)
+            except Exception as error:
+                follower_errors.append(error)
+        follower = threading.Thread(target=follow_idle)
+        follower.start()
+        row = json.dumps({"at": at, "kind": "hit", "name": "ResourceSetEntry", "tid": 1,
+            "status_ptr": "0x11", "status_actor_id": 5, "property_code": 12,
+            "value_before": 100, "maximum_before": 200, "requested_value": 40}) + "\n"
+        with idle_trace.open("a") as output:
+            output.write(row[:len(row)//2]); output.flush()
+            time.sleep(0.15)
+            output.write(row[len(row)//2:]); output.flush()
+        deadline = time.monotonic() + 3
+        seen = False
+        while time.monotonic() < deadline:
+            files = list(idle_dir.glob("*.json"))
+            if files and len(json.loads(files[0].read_text())["events"]) == 1:
+                seen = True; break
+            time.sleep(0.025)
+        with idle_trace.open("a") as output:
+            output.write(json.dumps({"at": at, "kind": "detached"}) + "\n")
+        follower.join(timeout=2)
+        assert seen, "single resource event was not flushed during idle"
+        assert not follower.is_alive() and not follower_errors, follower_errors
     print("Synthetic live bridge scope, pairing, knockout, and persistence checks passed.")
 
 

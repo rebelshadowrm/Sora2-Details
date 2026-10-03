@@ -4,6 +4,7 @@
 *.user
 *.suo
 .research-deps/
+.build/
 releases/
 **/__pycache__/
 *.pyc

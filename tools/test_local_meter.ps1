@@ -2,6 +2,9 @@ param([switch]$NoBuild)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+if (Get-Process -Name Sora2.Details.Desktop -ErrorAction SilentlyContinue) {
+    throw 'Exit the running Sora 2 Details app first. The single-instance launcher would otherwise restore that window instead of opening the isolated sample meter.'
+}
 $exe = Join-Path $root 'src\Sora2.Details.Desktop\bin\Release\net9.0-windows\Sora2.Details.Desktop.exe'
 $priorDataDirectory = $env:SORA2_DETAILS_DATA_DIR
 $priorResearchReplay = $env:SORA2_DETAILS_RESEARCH_REPLAY

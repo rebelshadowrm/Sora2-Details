@@ -112,7 +112,7 @@
                         ToolTip="Drag to move · right-click for display settings" />
                 <Button Grid.Column="2" Style="{StaticResource ChromeButton}" Content="▾"
                         FontSize="15" ToolTip="Recent encounters and full history" Click="HistoryButton_Click" />
-                <Button Grid.Column="3" Style="{StaticResource ChromeButton}" Content="◷"
+                <Button x:Name="CombatLogButton" Grid.Column="3" Style="{StaticResource ChromeButton}" Content="◷"
                         FontSize="15" ToolTip="Full recorded combat log" Click="TimelineButton_Click" />
                 <Button x:Name="UpdateButton" Grid.Column="4" Style="{StaticResource ChromeButton}" Content="↻"
                         ToolTip="Check for updates" Click="UpdateButton_Click" />
