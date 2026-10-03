@@ -96,6 +96,22 @@ Raw captures remain in the user's LocalAppData research directory and are exclud
 from the published application. The preview retains the existing unsigned policy.
 No claim of bug-free general gameplay or complete capture follows from these checks.
 
+## Publication verified
+
+[Preview 22](https://github.com/rebelshadowrm/Sora2-Details/releases/tag/v0.2.0-preview.22)
+is published as a public prerelease from commit
+`cbc31163567578f7d6fe6596f2d569c2e86e5bcb`. The
+[hosted workflow](https://github.com/rebelshadowrm/Sora2-Details/actions/runs/37130130087)
+completed successfully. Setup, portable ZIP, full/delta packages and the preview
+feed are present. Downloaded full/portable/feed hashes match GitHub asset digests;
+feed package hashes and sizes agree with the public assets. The public portable
+archive has 72 entries, bundled runtime text matches source, and private data are
+excluded. Its delivered executable reports `0.2.0-preview.22`.
+
+Public verification details are in
+`.research-deps/audit-20261003/public22/verification.json`. The installed local
+candidate was not upgraded during this publication check.
+
 ## Next live dependency
 
 One known Guard plus a named enemy craft can test the new inline descriptor text
