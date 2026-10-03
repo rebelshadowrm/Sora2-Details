@@ -2,7 +2,7 @@
 
 ## Release decision
 
-The available captures and regression checks support publishing **0.2.0-preview.21**
+The available captures and regression checks support publishing **0.2.0-preview.22**
 as a partial Windows preview. The project has made measurable forward progress;
 the complete authoritative action stream is still unfinished. Research candidates
 remain separate from verified encounter history and meter totals.
@@ -14,7 +14,7 @@ Start Menu shortcut targets LocalAppData `Sora2.Details/current` and reports
 desktop was running as PID 37444 and held its normal build files open. No game
 was running during this night's audit, and no new player controls were requested.
 
-Preview 21 is newer than both public preview 19 and the installed candidate.
+Preview 22 is newer than both public preview 19 and the installed candidate.
 Local packaging uses a separate output directory containing the downloaded public
 preview 19 predecessor, so its delta cannot depend on an unpublished preview 20.
 Publication and public feed verification are separate from local packaging.
@@ -42,6 +42,10 @@ are bounded neutral raw snapshots; they still require a live named craft contras
   ledger was published. It now waits for that observation in the committed
   projection. A Windows regression executes the actual launcher readiness branch
   against missing, pre-arm and armed bridge snapshots; only the armed case passes.
+  The first hosted run exposed canonical versus alias path spelling in that gate.
+  A parent-segment fixture reproduced the failure locally. Readiness now matches
+  the unique owned batch, accepting normalized paths and rejecting another batch.
+  Preview 21 failed before public assets were created; its tag remains intact.
 - Installer builds previously wrote over the normal source output, failing while
   a source desktop held its assemblies open. Isolated build artifacts allow the
   same package path to succeed while that desktop remains running.
@@ -78,10 +82,14 @@ are bounded neutral raw snapshots; they still require a live named craft contras
 - Embedded Python/runtime and capture-host package checks: passed. Packaging and
   public asset verification are recorded in the release workflow and local audit
   artifacts; they do not prove Windows consent or installed live combat behavior.
-- Final preview 21 package: Setup, portable ZIP, full package and public-preview-19
+- Local preview 21 package: Setup, portable ZIP, full package and public-preview-19
   delta built successfully. All 72 portable entries were inspected for private
   data; delivered runtime imports passed. The delivered standalone saved-transcript
   WPF viewer opened and closed successfully without elevation or game attachment.
+- Corrected preview 22: build/Core and all embedded checks passed, including the
+  canonical-path and wrong-batch readiness contrast. Setup, portable, full and
+  preview-19 delta built; 72 entries were inspected and all 21 bundled runtime
+  tools matched source bytes. Private research/history data remain excluded.
 
 Local detailed results and screenshots are under `.research-deps/audit-20261003`.
 Raw captures remain in the user's LocalAppData research directory and are excluded

@@ -1,6 +1,8 @@
-# Sora 2 Details 0.2.0 preview 21
+# Sora 2 Details 0.2.0 preview 22
 
 Preview 20 was an unpublished local audit build. This release uses a newer version so that installation and update checks can distinguish it from that candidate.
+
+Preview 21 stopped at a hosted readiness check before publication. Preview 22 fixes matching the owned capture batch when Windows normalizes the trace path.
 
 - Flush captured events while idle and update already-open timelines; show the saved log entry count.
 - Add tray capture-mode selection so effect research uses the same app and log view.

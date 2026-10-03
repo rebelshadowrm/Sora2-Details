@@ -73,7 +73,9 @@ while ([DateTime]::UtcNow -lt $deadline) {
                 # the armed marker, so a living bridge alone is not viewer readiness.
                 if (Test-Path -LiteralPath $manifest.ledgerPath) {
                     $ledger = Get-Content -LiteralPath $manifest.ledgerPath -Raw | ConvertFrom-Json
-                    if ($ledger.tracePath -eq $trace -and
+                    # Python canonicalizes tracePath, including Windows aliases.
+                    # Match the unique owned batch instead of spelling of its path.
+                    if ($ledger.batchId -eq "action-stream-$batchId" -and
                         ($ledger.observations | Where-Object { $_.raw.kind -eq 'armed' })) {
                         Write-Output "Recording action stream; manual stop only. Ledger: $($manifest.ledgerPath)"
                         exit 0

@@ -16,7 +16,10 @@ class BridgeChecks(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell launcher readiness')
     def test_launcher_waits_for_published_armed_observation(self):
         with tempfile.TemporaryDirectory() as directory:
-            trace = Path(directory) / 'raw.jsonl'
+            # The hosted runner's TEMP can use an 8.3 alias. A parent segment
+            # reproduces the same difference from publish()'s canonical path.
+            (Path(directory) / 'staging').mkdir()
+            trace = Path(directory) / 'staging' / '..' / 'action-stream-batch.jsonl'
             output = Path(directory) / 'ledger.json'
             launcher = Path(__file__).with_name('start_action_stream.ps1').resolve()
             def quote(value):
@@ -52,6 +55,10 @@ class BridgeChecks(unittest.TestCase):
             result = ready()
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertIn('Recording action stream', result.stdout)
+            wrong_batch = json.loads(output.read_text())
+            wrong_batch['batchId'] = 'action-stream-some-other-batch'
+            output.write_text(json.dumps(wrong_batch), encoding='utf-8')
+            self.assertEqual(3, ready().returncode, 'another armed batch is not ready')
 
     @unittest.skipUnless(os.name == 'nt', 'Windows file sharing regression')
     def test_windows_reader_temporarily_denies_atomic_replacement(self):
